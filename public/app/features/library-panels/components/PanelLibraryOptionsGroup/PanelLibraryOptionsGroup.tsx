@@ -1,5 +1,5 @@
 import { css } from '@emotion/css';
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { PanelPluginMeta } from '@grafana/data';
 import { Button, VerticalGroup } from '@grafana/ui';
@@ -43,7 +43,6 @@ export const PanelLibraryOptionsGroup = ({ panel, searchQuery }: Props) => {
 
   const onAddToPanelLibrary = () => setShowingAddPanelModal(true);
   const onDismissChangeToPanel = () => setChangeToPanel(undefined);
-
   return (
     <VerticalGroup spacing="md">
       {!panel.libraryPanel && (
@@ -83,7 +82,7 @@ export const PanelLibraryOptionsGroup = ({ panel, searchQuery }: Props) => {
 };
 
 const styles = {
-  libraryPanelsView: css`
-    width: 100%;
-  `,
+  libraryPanelsView: css({
+    width: '100%',
+  }),
 };

@@ -5,12 +5,17 @@ import (
 	"sort"
 
 	"github.com/grafana/grafana/pkg/infra/db"
+	"github.com/grafana/grafana/pkg/infra/metrics"
 	"github.com/grafana/grafana/pkg/services/dashboards"
+	"github.com/grafana/grafana/pkg/services/dashboards/dashboardaccess"
 	"github.com/grafana/grafana/pkg/services/search/model"
 	"github.com/grafana/grafana/pkg/services/star"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/setting"
+	"go.opentelemetry.io/otel"
 )
+
+var tracer = otel.Tracer("github.com/grafana/grafana/pkg/services/search")
 
 func ProvideService(cfg *setting.Cfg, sqlstore db.DB, starService star.Service, dashboardService dashboards.DashboardService) *SearchService {
 	s := &SearchService{
@@ -34,12 +39,15 @@ type Query struct {
 	Limit         int64
 	Page          int64
 	IsStarred     bool
+	IsDeleted     bool
 	Type          string
 	DashboardUIDs []string
 	DashboardIds  []int64
-	FolderIds     []int64
-	Permission    dashboards.PermissionType
-	Sort          string
+	// Deprecated: use FolderUID instead
+	FolderIds  []int64
+	FolderUIDs []string
+	Permission dashboardaccess.PermissionType
+	Sort       string
 }
 
 type Service interface {
@@ -56,6 +64,9 @@ type SearchService struct {
 }
 
 func (s *SearchService) SearchHandler(ctx context.Context, query *Query) (model.HitList, error) {
+	ctx, span := tracer.Start(ctx, "search.SearchHandler")
+	defer span.End()
+
 	starredQuery := star.GetUserStarsQuery{
 		UserID: query.SignedInUser.UserID,
 	}
@@ -71,22 +82,25 @@ func (s *SearchService) SearchHandler(ctx context.Context, query *Query) (model.
 
 	// filter by starred dashboard IDs when starred dashboards are requested and no UID or ID filters are specified to improve query performance
 	if query.IsStarred && len(query.DashboardIds) == 0 && len(query.DashboardUIDs) == 0 {
-		for id := range staredDashIDs.UserStars {
-			query.DashboardIds = append(query.DashboardIds, id)
+		for uid := range staredDashIDs.UserStars {
+			query.DashboardUIDs = append(query.DashboardUIDs, uid)
 		}
 	}
 
+	metrics.MFolderIDsServiceCount.WithLabelValues(metrics.Search).Inc()
 	dashboardQuery := dashboards.FindPersistedDashboardsQuery{
 		Title:         query.Title,
 		SignedInUser:  query.SignedInUser,
 		DashboardUIDs: query.DashboardUIDs,
 		DashboardIds:  query.DashboardIds,
 		Type:          query.Type,
-		FolderIds:     query.FolderIds,
+		FolderIds:     query.FolderIds, // nolint:staticcheck
+		FolderUIDs:    query.FolderUIDs,
 		Tags:          query.Tags,
 		Limit:         query.Limit,
 		Page:          query.Page,
 		Permission:    query.Permission,
+		IsDeleted:     query.IsDeleted,
 	}
 
 	if sortOpt, exists := s.sortOptions[query.Sort]; exists {
@@ -104,7 +118,7 @@ func (s *SearchService) SearchHandler(ctx context.Context, query *Query) (model.
 
 	// set starred dashboards
 	for _, dashboard := range hits {
-		if _, ok := staredDashIDs.UserStars[dashboard.ID]; ok {
+		if _, ok := staredDashIDs.UserStars[dashboard.UID]; ok {
 			dashboard.IsStarred = true
 		}
 	}

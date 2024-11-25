@@ -1,5 +1,5 @@
-import { DataFrame, FieldType, FieldConfig, Labels, QueryResultMeta, Field } from '../types';
-import { ArrayVector } from '../vector';
+import { Labels, QueryResultMeta } from '../types/data';
+import { FieldType, DataFrame, Field, FieldConfig } from '../types/dataFrame';
 
 import { guessFieldTypeFromNameAndValue } from './processDataFrame';
 
@@ -129,9 +129,10 @@ const ENTITY_MAP: Record<keyof FieldValueEntityLookup, number | undefined> = {
  * @internal use locally
  */
 export function decodeFieldValueEntities(lookup: FieldValueEntityLookup, values: FieldValues) {
-  for (const key in lookup) {
-    const repl = ENTITY_MAP[key as keyof FieldValueEntityLookup];
-    for (const idx of lookup[key as keyof FieldValueEntityLookup]!) {
+  let key: keyof typeof lookup;
+  for (key in lookup) {
+    const repl = ENTITY_MAP[key];
+    for (const idx of lookup[key]!) {
       if (idx < values.length) {
         values[idx] = repl;
       }
@@ -144,7 +145,7 @@ export function decodeFieldValueEntities(lookup: FieldValueEntityLookup, values:
  */
 export function decodeFieldValueEnums(lookup: string[], values: FieldValues) {
   for (let i = 0; i < values.length; i++) {
-    values[i] = lookup[values[i] as number];
+    values[i] = lookup[Number(values[i])];
   }
 }
 
@@ -203,7 +204,7 @@ export function dataFrameFromJSON(dto: DataFrameJSON): DataFrame {
       ...f,
       type: type ?? guessFieldType(f.name, buffer),
       config: f.config ?? {},
-      values: new ArrayVector(buffer),
+      values: buffer,
       // the presence of this prop is an optimization signal & lookup for consumers
       entities: entities ?? {},
     };
@@ -241,8 +242,10 @@ export function dataFrameToJSON(frame: DataFrame): DataFrameJSON {
     name: frame.name,
     fields: frame.fields.map((f) => {
       const { values, nanos, state, display, ...sfield } = f;
-      delete (sfield as any).entities;
-      data.values.push(values.toArray());
+      if ('entities' in sfield) {
+        delete sfield.entities;
+      }
+      data.values.push(values);
 
       if (nanos != null) {
         allNanos.push(nanos);

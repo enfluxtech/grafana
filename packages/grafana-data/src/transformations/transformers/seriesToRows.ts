@@ -1,7 +1,8 @@
 import { omit } from 'lodash';
 import { map } from 'rxjs/operators';
 
-import { MutableDataFrame, sortDataFrame } from '../../dataframe';
+import { MutableDataFrame } from '../../dataframe/MutableDataFrame';
+import { sortDataFrame } from '../../dataframe/processDataFrame';
 import { isTimeSeriesFrames } from '../../dataframe/utils';
 import { getFrameDisplayName } from '../../field/fieldState';
 import {
@@ -12,7 +13,6 @@ import {
   TIME_SERIES_VALUE_FIELD_NAME,
 } from '../../types/dataFrame';
 import { DataTransformerInfo } from '../../types/transformations';
-import { ArrayVector } from '../../vector';
 
 import { DataTransformerID } from './ids';
 
@@ -26,10 +26,11 @@ export const seriesToRowsTransformer: DataTransformerInfo<SeriesToRowsTransforme
   operator: (options) => (source) =>
     source.pipe(
       map((data) => {
-        if (!Array.isArray(data) || data.length <= 1) {
+        if (!Array.isArray(data) || data.length === 0) {
           return data;
         }
 
+        data = data.filter((frame) => frame.length > 0);
         if (!isTimeSeriesFrames(data)) {
           return data;
         }
@@ -39,7 +40,7 @@ export const seriesToRowsTransformer: DataTransformerInfo<SeriesToRowsTransforme
         const dataFrame = new MutableDataFrame();
         const metricField: Field = {
           name: TIME_SERIES_METRIC_FIELD_NAME,
-          values: new ArrayVector(),
+          values: [],
           config: {},
           type: FieldType.string,
         };
@@ -76,9 +77,9 @@ export const seriesToRowsTransformer: DataTransformerInfo<SeriesToRowsTransforme
             const valueFieldIndex = timeFieldIndex === 0 ? 1 : 0;
 
             dataFrame.add({
-              [TIME_SERIES_TIME_FIELD_NAME]: frame.fields[timeFieldIndex].values.get(valueIndex),
+              [TIME_SERIES_TIME_FIELD_NAME]: frame.fields[timeFieldIndex].values[valueIndex],
               [TIME_SERIES_METRIC_FIELD_NAME]: getFrameDisplayName(frame),
-              [TIME_SERIES_VALUE_FIELD_NAME]: frame.fields[valueFieldIndex].values.get(valueIndex),
+              [TIME_SERIES_VALUE_FIELD_NAME]: frame.fields[valueFieldIndex].values[valueIndex],
             });
           }
         }
@@ -92,7 +93,7 @@ const copyFieldStructure = (field: Field, name: string): Field => {
   return {
     ...omit(field, ['values', 'state', 'labels', 'config', 'name']),
     name: name,
-    values: new ArrayVector(),
+    values: [],
     config: {
       ...omit(field.config, ['displayName', 'displayNameFromDS']),
     },

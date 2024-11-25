@@ -1,15 +1,19 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 
-import { FieldType, PanelProps } from '@grafana/data';
+import { DataFrame, FieldMatcherID, fieldMatchers, FieldType, PanelProps, TimeRange } from '@grafana/data';
 import { isLikelyAscendingVector } from '@grafana/data/src/transformations/transformers/joinDataFrames';
 import { config, PanelDataErrorView } from '@grafana/runtime';
-import { KeyboardPlugin, TimeSeries, TooltipDisplayMode, TooltipPlugin, usePanelContext } from '@grafana/ui';
+import { KeyboardPlugin, TooltipDisplayMode, usePanelContext, TooltipPlugin2 } from '@grafana/ui';
+import { TooltipHoverMode } from '@grafana/ui/src/components/uPlot/plugins/TooltipPlugin2';
+import { XYFieldMatchers } from 'app/core/components/GraphNG/types';
+import { preparePlotFrame } from 'app/core/components/GraphNG/utils';
+import { TimeSeries } from 'app/core/components/TimeSeries/TimeSeries';
 import { findFieldIndex } from 'app/features/dimensions';
 
-import { ContextMenuPlugin } from '../timeseries/plugins/ContextMenuPlugin';
-import { prepareGraphableFields, regenerateLinksSupplier } from '../timeseries/utils';
+import { TimeSeriesTooltip } from '../timeseries/TimeSeriesTooltip';
+import { prepareGraphableFields } from '../timeseries/utils';
 
-import { PanelOptions } from './panelcfg.gen';
+import { Options } from './panelcfg.gen';
 
 export const TrendPanel = ({
   data,
@@ -21,8 +25,19 @@ export const TrendPanel = ({
   fieldConfig,
   replaceVariables,
   id,
-}: PanelProps<PanelOptions>) => {
-  const { sync } = usePanelContext();
+}: PanelProps<Options>) => {
+  const { dataLinkPostProcessor } = usePanelContext();
+  // Need to fallback to first number field if no xField is set in options otherwise panel crashes 😬
+  const trendXFieldName =
+    options.xField ?? data.series[0]?.fields.find((field) => field.type === FieldType.number)?.name;
+  const preparePlotFrameTimeless = (frames: DataFrame[], dimFields: XYFieldMatchers, timeRange?: TimeRange | null) => {
+    dimFields = {
+      ...dimFields,
+      x: fieldMatchers.get(FieldMatcherID.byName).get(trendXFieldName),
+    };
+
+    return preparePlotFrame(frames, dimFields);
+  };
 
   const info = useMemo(() => {
     if (data.series.length > 1) {
@@ -35,7 +50,7 @@ export const TrendPanel = ({
     let frames = data.series;
     let xFieldIdx: number | undefined;
     if (options.xField) {
-      xFieldIdx = findFieldIndex(frames[0], options.xField);
+      xFieldIdx = findFieldIndex(options.xField, frames[0]);
       if (xFieldIdx == null) {
         return {
           warning: 'Unable to find field: ' + options.xField,
@@ -45,7 +60,7 @@ export const TrendPanel = ({
     } else {
       // first number field
       // Perhaps we can/should support any ordinal rather than an error here
-      xFieldIdx = frames[0].fields.findIndex((f) => f.type === FieldType.number);
+      xFieldIdx = frames[0] ? frames[0].fields.findIndex((f) => f.type === FieldType.number) : -1;
       if (xFieldIdx === -1) {
         return {
           warning: 'No numeric fields found for X axis',
@@ -66,7 +81,7 @@ export const TrendPanel = ({
     }
 
     return { frames: prepareGraphableFields(frames, config.theme2, undefined, xFieldIdx) };
-  }, [data, options.xField]);
+  }, [data.series, options.xField]);
 
   if (info.warning || !info.frames) {
     return (
@@ -90,37 +105,37 @@ export const TrendPanel = ({
       height={height}
       legend={options.legend}
       options={options}
+      preparePlotFrame={preparePlotFrameTimeless}
+      replaceVariables={replaceVariables}
+      dataLinkPostProcessor={dataLinkPostProcessor}
     >
-      {(config, alignedDataFrame) => {
-        if (
-          alignedDataFrame.fields.filter((f) => f.config.links !== undefined && f.config.links.length > 0).length > 0
-        ) {
-          alignedDataFrame = regenerateLinksSupplier(alignedDataFrame, info.frames!, replaceVariables, timeZone);
-        }
-
+      {(uPlotConfig, alignedDataFrame) => {
         return (
           <>
-            <KeyboardPlugin config={config} />
-            {options.tooltip.mode === TooltipDisplayMode.None || (
-              <TooltipPlugin
-                frames={info.frames!}
-                data={alignedDataFrame}
-                config={config}
-                mode={options.tooltip.mode}
-                sortOrder={options.tooltip.sort}
-                sync={sync}
-                timeZone={timeZone}
+            <KeyboardPlugin config={uPlotConfig} />
+            {options.tooltip.mode !== TooltipDisplayMode.None && (
+              <TooltipPlugin2
+                config={uPlotConfig}
+                hoverMode={
+                  options.tooltip.mode === TooltipDisplayMode.Single ? TooltipHoverMode.xOne : TooltipHoverMode.xAll
+                }
+                render={(u, dataIdxs, seriesIdx, isPinned = false) => {
+                  return (
+                    <TimeSeriesTooltip
+                      series={alignedDataFrame}
+                      dataIdxs={dataIdxs}
+                      seriesIdx={seriesIdx}
+                      mode={options.tooltip.mode}
+                      sortOrder={options.tooltip.sort}
+                      isPinned={isPinned}
+                      maxHeight={options.tooltip.maxHeight}
+                      replaceVariables={replaceVariables}
+                    />
+                  );
+                }}
+                maxWidth={options.tooltip.maxWidth}
               />
             )}
-
-            <ContextMenuPlugin
-              data={alignedDataFrame}
-              frames={info.frames!}
-              config={config}
-              timeZone={timeZone}
-              replaceVariables={replaceVariables}
-              defaultItems={[]}
-            />
           </>
         );
       }}

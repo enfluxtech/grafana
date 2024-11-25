@@ -1,5 +1,6 @@
 import { cx, css } from '@emotion/css';
-import React, { HTMLProps, useRef, useState } from 'react';
+import { HTMLProps, useRef, useState } from 'react';
+import * as React from 'react';
 import useClickAway from 'react-use/lib/useClickAway';
 
 import { useStyles2 } from '../../themes';
@@ -7,8 +8,8 @@ import { measureText } from '../../utils/measureText';
 import { InlineLabel } from '../Forms/InlineLabel';
 
 import { getSegmentStyles } from './styles';
-
-import { useExpandableLabel, SegmentProps } from '.';
+import { SegmentProps } from './types';
+import { useExpandableLabel } from './useExpandableLabel';
 
 export interface SegmentInputProps
   extends Omit<SegmentProps, 'allowCustomValue' | 'allowEmptyValue'>,
@@ -66,9 +67,9 @@ export function SegmentInput({
     );
   }
 
-  const inputWidthStyle = css`
-    width: ${Math.max(inputWidth + 20, 32)}px;
-  `;
+  const inputWidthStyle = css({
+    width: `${Math.max(inputWidth + 20, 32)}px`,
+  });
 
   return (
     <input

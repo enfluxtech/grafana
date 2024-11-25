@@ -4,7 +4,6 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/grafana/grafana/pkg/cmd/grafana-cli/logger"
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/services/ngalert/models"
 )
@@ -19,9 +18,10 @@ type RuleMeta struct {
 	NamespaceUID string
 	DashboardUID string
 	PanelID      int64
+	Condition    string
 }
 
-func NewRuleMeta(r *models.AlertRule, log log.Logger) RuleMeta {
+func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
 	dashUID, ok := r.Annotations[models.DashboardUIDAnnotation]
 	var panelID int64
 	if ok {
@@ -43,6 +43,7 @@ func NewRuleMeta(r *models.AlertRule, log log.Logger) RuleMeta {
 		NamespaceUID: r.NamespaceUID,
 		DashboardUID: dashUID,
 		PanelID:      panelID,
+		Condition:    r.Condition,
 	}
 }
 

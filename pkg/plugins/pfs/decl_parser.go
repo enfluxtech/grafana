@@ -3,28 +3,25 @@ package pfs
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 
-	"github.com/grafana/kindsys"
-	"github.com/grafana/thema"
+	"cuelang.org/go/cue/cuecontext"
 )
 
-type declParser struct {
-	rt   *thema.Runtime
+type DeclParser struct {
 	skip map[string]bool
 }
 
-func NewDeclParser(rt *thema.Runtime, skip map[string]bool) *declParser {
-	return &declParser{
-		rt:   rt,
+func NewDeclParser(skip map[string]bool) *DeclParser {
+	return &DeclParser{
 		skip: skip,
 	}
 }
 
 // TODO convert this to be the new parser for Tree
-func (psr *declParser) Parse(root fs.FS) ([]*PluginDecl, error) {
+func (psr *DeclParser) Parse(root fs.FS) ([]*PluginDecl, error) {
+	ctx := cuecontext.New()
 	// TODO remove hardcoded tree structure assumption, work from root of provided fs
 	plugins, err := fs.Glob(root, "**/**/plugin.json")
 	if err != nil {
@@ -39,31 +36,23 @@ func (psr *declParser) Parse(root fs.FS) ([]*PluginDecl, error) {
 			continue
 		}
 
-		dir := os.DirFS(path)
-		pp, err := ParsePluginFS(dir, psr.rt)
+		dir, _ := fs.Sub(root, path)
+		pp, err := ParsePluginFS(ctx, dir, path)
 		if err != nil {
 			return nil, fmt.Errorf("parsing plugin failed for %s: %s", dir, err)
 		}
 
-		if len(pp.ComposableKinds) == 0 {
-			decls = append(decls, EmptyPluginDecl(path, pp.Properties))
+		if !pp.CueFile.Exists() {
 			continue
 		}
 
-		for slotName, kind := range pp.ComposableKinds {
-			slot, err := kindsys.FindSchemaInterface(slotName)
-			if err != nil {
-				return nil, fmt.Errorf("parsing plugin failed for %s: %s", dir, err)
-			}
-			decls = append(decls, &PluginDecl{
-				SchemaInterface: &slot,
-				Lineage:         kind.Lineage(),
-				Imports:         pp.CUEImports,
-				PluginMeta:      pp.Properties,
-				PluginPath:      path,
-				KindDecl:        kind.Def(),
-			})
-		}
+		decls = append(decls, &PluginDecl{
+			SchemaInterface: pp.Variant,
+			CueFile:         pp.CueFile,
+			Imports:         pp.CUEImports,
+			PluginMeta:      pp.Properties,
+			PluginPath:      path,
+		})
 	}
 
 	sort.Slice(decls, func(i, j int) bool {

@@ -3,7 +3,13 @@ import { ComponentType } from 'react';
 import { KeyValue } from './data';
 import { NavModel } from './navModel';
 import { PluginMeta, GrafanaPlugin, PluginIncludeType } from './plugin';
-import { type PluginExtensionLinkConfig, PluginExtensionTypes } from './pluginExtensions';
+import {
+  type PluginExtensionLinkConfig,
+  PluginExtensionComponentConfig,
+  PluginExtensionExposedComponentConfig,
+  PluginExtensionAddedComponentConfig,
+  PluginExtensionAddedLinkConfig,
+} from './pluginExtensions';
 
 /**
  * @public
@@ -51,7 +57,9 @@ export interface AppPluginMeta<T extends KeyValue = KeyValue> extends PluginMeta
 }
 
 export class AppPlugin<T extends KeyValue = KeyValue> extends GrafanaPlugin<AppPluginMeta<T>> {
-  private _extensionConfigs: PluginExtensionLinkConfig[] = [];
+  private _exposedComponentConfigs: PluginExtensionExposedComponentConfig[] = [];
+  private _addedComponentConfigs: PluginExtensionAddedComponentConfig[] = [];
+  private _addedLinkConfigs: PluginExtensionAddedLinkConfig[] = [];
 
   // Content under: /a/${plugin-id}/*
   root?: ComponentType<AppRootProps<T>>;
@@ -74,7 +82,7 @@ export class AppPlugin<T extends KeyValue = KeyValue> extends GrafanaPlugin<AppP
     return this;
   }
 
-  setComponentsFromLegacyExports(pluginExports: any) {
+  setComponentsFromLegacyExports(pluginExports: System.Module) {
     if (pluginExports.ConfigCtrl) {
       this.angularConfigCtrl = pluginExports.ConfigCtrl;
     }
@@ -93,15 +101,52 @@ export class AppPlugin<T extends KeyValue = KeyValue> extends GrafanaPlugin<AppP
     }
   }
 
-  get extensionConfigs() {
-    return this._extensionConfigs;
+  get exposedComponentConfigs() {
+    return this._exposedComponentConfigs;
   }
 
+  get addedComponentConfigs() {
+    return this._addedComponentConfigs;
+  }
+
+  get addedLinkConfigs() {
+    return this._addedLinkConfigs;
+  }
+
+  addLink<Context extends object>(linkConfig: PluginExtensionAddedLinkConfig<Context>) {
+    this._addedLinkConfigs.push(linkConfig as PluginExtensionAddedLinkConfig);
+
+    return this;
+  }
+
+  addComponent<Props = {}>(addedComponentConfig: PluginExtensionAddedComponentConfig<Props>) {
+    this._addedComponentConfigs.push(addedComponentConfig as PluginExtensionAddedComponentConfig);
+
+    return this;
+  }
+
+  exposeComponent<Props = {}>(componentConfig: PluginExtensionExposedComponentConfig<Props>) {
+    this._exposedComponentConfigs.push(componentConfig as PluginExtensionExposedComponentConfig);
+
+    return this;
+  }
+
+  /** @deprecated Use .addLink() instead */
   configureExtensionLink<Context extends object>(extension: Omit<PluginExtensionLinkConfig<Context>, 'type'>) {
-    this._extensionConfigs.push({
+    this.addLink({
+      targets: [extension.extensionPointId],
       ...extension,
-      type: PluginExtensionTypes.link,
-    } as PluginExtensionLinkConfig);
+    });
+
+    return this;
+  }
+  /** @deprecated Use .addComponent() instead */
+  configureExtensionComponent<Props = {}>(extension: Omit<PluginExtensionComponentConfig<Props>, 'type'>) {
+    this.addComponent({
+      targets: [extension.extensionPointId],
+      ...extension,
+      component: extension.component,
+    });
 
     return this;
   }
@@ -112,6 +157,14 @@ export class AppPlugin<T extends KeyValue = KeyValue> extends GrafanaPlugin<AppP
  * @internal
  */
 export enum FeatureState {
+  /** @deprecated in favor of experimental */
   alpha = 'alpha',
+  /** @deprecated in favor of preview */
   beta = 'beta',
+  /** used to mark experimental features with high/unknown risk */
+  experimental = 'experimental',
+  /** used to mark features that are in public preview with medium/hight risk */
+  privatePreview = 'private preview',
+  /** used to mark features that are in public preview with low/medium risk, or as a shared badge for public and private previews */
+  preview = 'preview',
 }

@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 
-ARG BASE_IMAGE=alpine:3.17
-ARG JS_IMAGE=node:18-alpine3.17
+ARG BASE_IMAGE=alpine:3.20
+ARG JS_IMAGE=node:20-alpine
 ARG JS_PLATFORM=linux/amd64
-ARG GO_IMAGE=golang:1.20.3-alpine3.17
+ARG GO_IMAGE=golang:1.23.1-alpine
 
 ARG GO_SRC=go-builder
 ARG JS_SRC=js-builder
@@ -14,36 +14,60 @@ ENV NODE_OPTIONS=--max_old_space_size=8000
 
 WORKDIR /tmp/grafana
 
-COPY package.json yarn.lock .yarnrc.yml ./
+COPY package.json project.json nx.json yarn.lock .yarnrc.yml ./
 COPY .yarn .yarn
 COPY packages packages
 COPY plugins-bundled plugins-bundled
-
-RUN yarn install --immutable
-
-COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js babel.config.json .linguirc ./
 COPY public public
+COPY LICENSE ./
+COPY conf/defaults.ini ./conf/defaults.ini
+
+RUN apk add --no-cache make build-base python3
+
+#RUN yarn install --immutable
+RUN yarn install
+
+COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
 COPY emails emails
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 RUN yarn build
 
 FROM ${GO_IMAGE} as go-builder
 
+ARG COMMIT_SHA=""
+ARG BUILD_BRANCH=""
 ARG GO_BUILD_TAGS="oss"
 ARG WIRE_TAGS="oss"
 ARG BINGO="true"
 
-# Install build dependencies
 RUN if grep -i -q alpine /etc/issue; then \
-      apk add --no-cache gcc g++ make git; \
+      apk add --no-cache \
+          # This is required to allow building on arm64 due to https://github.com/golang/go/issues/22040
+          binutils-gold \
+          bash \
+          # Install build dependencies
+          gcc g++ make git; \
     fi
 
 WORKDIR /tmp/grafana
 
 COPY go.* ./
 COPY .bingo .bingo
+
+# Include vendored dependencies
+COPY pkg/util/xorm/go.* pkg/util/xorm/
+COPY pkg/apiserver/go.* pkg/apiserver/
+COPY pkg/apimachinery/go.* pkg/apimachinery/
+COPY pkg/build/go.* pkg/build/
+COPY pkg/build/wire/go.* pkg/build/wire/
+COPY pkg/promlib/go.* pkg/promlib/
+COPY pkg/storage/unified/resource/go.* pkg/storage/unified/resource/
+COPY pkg/storage/unified/apistore/go.* pkg/storage/unified/apistore/
+COPY pkg/semconv/go.* pkg/semconv/
+COPY pkg/aggregator/go.* pkg/aggregator/
+COPY apps/playlist/go.* apps/playlist/
 
 RUN go mod download
 RUN if [[ "$BINGO" = "true" ]]; then \
@@ -54,6 +78,7 @@ RUN if [[ "$BINGO" = "true" ]]; then \
 COPY embed.go Makefile build.go package.json ./
 COPY cue.mod cue.mod
 COPY kinds kinds
+COPY kindsv2 kindsv2
 COPY local local
 COPY packages/grafana-schema packages/grafana-schema
 COPY public/app/plugins public/app/plugins
@@ -62,7 +87,9 @@ COPY pkg pkg
 COPY scripts scripts
 COPY conf conf
 COPY .github .github
-COPY .git .git
+
+ENV COMMIT_SHA=${COMMIT_SHA}
+ENV BUILD_BRANCH=${BUILD_BRANCH}
 
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
 
@@ -70,12 +97,9 @@ FROM ${BASE_IMAGE} as tgz-builder
 
 WORKDIR /tmp/grafana
 
-ARG GRAFANA_TGZ="grafana-latest.linux-x64-musl.tar.gz"
-
-COPY ${GRAFANA_TGZ} /tmp/grafana.tar.gz
-
-# add -v to make tar print every file it extracts
-RUN tar x -z -f /tmp/grafana.tar.gz --strip-components=1
+COPY ./public ./public
+COPY ./scripts ./scripts
+COPY ./plugins-bundled ./plugins-bundled
 
 # helpers for COPY --from
 FROM ${GO_SRC} as go-src
@@ -106,7 +130,7 @@ RUN if grep -i -q alpine /etc/issue; then \
     elif grep -i -q ubuntu /etc/issue; then \
       DEBIAN_FRONTEND=noninteractive && \
       apt-get update && \
-      apt-get install -y ca-certificates curl tzdata && \
+      apt-get install -y ca-certificates curl tzdata musl && \
       apt-get autoremove -y && \
       rm -rf /var/lib/apt/lists/*; \
     else \
@@ -161,6 +185,7 @@ RUN if [ ! $(getent group "$GF_GID") ]; then \
 
 COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
 COPY --from=js-src /tmp/grafana/public ./public
+COPY --from=js-src /tmp/grafana/LICENSE ./
 
 EXPOSE 3000
 

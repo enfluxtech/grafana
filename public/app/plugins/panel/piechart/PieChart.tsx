@@ -5,7 +5,8 @@ import { Group } from '@visx/group';
 import Pie, { PieArcDatum, ProvidedProps } from '@visx/shape/lib/shapes/Pie';
 import { useTooltip, useTooltipInPortal } from '@visx/tooltip';
 import { UseTooltipParams } from '@visx/tooltip/lib/hooks/useTooltip';
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
+import * as React from 'react';
 import tinycolor from 'tinycolor2';
 
 import {
@@ -249,7 +250,7 @@ function PieSlice({ arc, pie, highlightState, openMenu, fill, tooltip, tooltipOp
       onMouseMove={tooltipOptions.mode !== 'none' ? onMouseMoveOverArc : undefined}
       onMouseOut={onMouseOut}
       onClick={openMenu}
-      aria-label={selectors.components.Panels.Visualization.PieChart.svgSlice}
+      data-testid={selectors.components.Panels.Visualization.PieChart.svgSlice}
     >
       <path d={pie.path({ ...arc })!} fill={fill} stroke={theme.colors.background.primary} strokeWidth={1} />
     </g>
@@ -422,28 +423,32 @@ function getSvgStyle(
 
 const getStyles = (theme: GrafanaTheme2) => {
   return {
-    container: css`
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `,
+    container: css({
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }),
     svgArg: {
-      normal: css`
-        transition: all 200ms ease-in-out;
-      `,
-      highlighted: css`
-        transition: all 200ms ease-in-out;
-        transform: scale3d(1.03, 1.03, 1);
-      `,
-      deemphasized: css`
-        transition: all 200ms ease-in-out;
-        fill-opacity: 0.5;
-      `,
+      normal: css({
+        [theme.transitions.handleMotion('no-preference')]: {
+          transition: 'all 200ms ease-in-out',
+        },
+      }),
+      highlighted: css({
+        [theme.transitions.handleMotion('no-preference')]: {
+          transition: 'all 200ms ease-in-out',
+        },
+        transform: 'scale3d(1.03, 1.03, 1)',
+      }),
+      deemphasized: css({
+        [theme.transitions.handleMotion('no-preference')]: {
+          transition: 'all 200ms ease-in-out',
+        },
+        fillOpacity: 0.5,
+      }),
     },
-    tooltipPortal: css`
-      ${getTooltipContainerStyles(theme)}
-    `,
+    tooltipPortal: css(getTooltipContainerStyles(theme)),
   };
 };

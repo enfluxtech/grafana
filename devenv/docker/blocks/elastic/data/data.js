@@ -64,6 +64,18 @@ async function elasticSetupIndexTemplate() {
           '@timestamp': {
             type: 'date',
           },
+          '@timestamp_custom': {
+            type: 'date',
+            format: 'yyyy_MM_dd_HH_mm_ss'
+          },
+          '@timestamp_unix': {
+            type: 'date',
+            format: 'epoch_millis'
+          },
+          '@timestamp_nanos': {
+            type: 'date_nanos',
+            format: 'strict_date_optional_time_nanos'
+          },
           counter: {
             type: 'integer',
           },
@@ -115,6 +127,9 @@ function getRandomLogItem(counter, timestamp) {
   const maybeAnsiText = Math.random() < 0.5 ? 'with ANSI \u001b[31mpart of the text\u001b[0m' : '';
   return {
     '@timestamp': timestamp.toISOString(),
+    '@timestamp_custom': timestamp.toISOString().split('.')[0].replace(/[T:-]/g,'_'),
+    '@timestamp_unix': timestamp.getTime(),
+    '@timestamp_nanos': timestamp.toISOString().slice(0,-1) + '123Z',
     line: `log text ${maybeAnsiText} [${randomText}]`,
     counter: counter.toString(),
     float: 100 * Math.random().toString(),
@@ -134,9 +149,13 @@ function getRandomLogItem(counter, timestamp) {
     hostname: chooseRandomElement(['hostname1', 'hostname2', 'hostname3', 'hostname4', 'hostname5', 'hostname6']),
     value: counter,
     metric: chooseRandomElement(['cpu', 'memory', 'latency']),
-    description: "this is description"
+    description: "this is description",
+    slash: "Access to the path '\\\\tkasnpo\\KASNPO\\Files\\contacts.xml' is denied.",
+    url: "/foo/blah"
   };
 }
+
+let globalCounter = 0;
 
 async function main() {
   await elasticSetupIndexTemplate();
@@ -147,10 +166,10 @@ async function main() {
     return Math.trunc(1000 * Math.abs(Math.sin(sleepAngle)));
   }
 
-  for (let step = 0; step < 300; step++) {
+  while (true) {
     await sleep(getNextSineWaveSleepDuration());
     const timestamp = new Date();
-    const item = getRandomLogItem(step + 1, timestamp);
+    const item = getRandomLogItem(globalCounter++, timestamp);
     elasticSendLogItem(timestamp, item);
   }
 }

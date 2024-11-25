@@ -5,32 +5,26 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
+	"time"
 
 	"github.com/grafana/grafana/pkg/bus"
-	"github.com/grafana/grafana/pkg/services/accesscontrol"
-	acmock "github.com/grafana/grafana/pkg/services/accesscontrol/mock"
-	"github.com/grafana/grafana/pkg/services/dashboards"
-	"github.com/grafana/grafana/pkg/services/dashboards/database"
-	dashboardservice "github.com/grafana/grafana/pkg/services/dashboards/service"
-	"github.com/grafana/grafana/pkg/services/featuremgmt"
-	"github.com/grafana/grafana/pkg/services/folder"
-	"github.com/grafana/grafana/pkg/services/folder/folderimpl"
+	"github.com/grafana/grafana/pkg/infra/db"
+	"github.com/grafana/grafana/pkg/infra/log/logtest"
+	"github.com/grafana/grafana/pkg/infra/tracing"
 	"github.com/grafana/grafana/pkg/services/folder/foldertest"
-	"github.com/grafana/grafana/pkg/services/guardian"
 	"github.com/grafana/grafana/pkg/services/ngalert/models"
-	"github.com/grafana/grafana/pkg/services/quota/quotatest"
-	"github.com/grafana/grafana/pkg/services/sqlstore"
-	"github.com/grafana/grafana/pkg/services/tag/tagimpl"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
-func NewFakeImageStore(t *testing.T) *FakeImageStore {
+func NewFakeImageStore(t *testing.T, images ...*models.Image) *FakeImageStore {
+	imageMap := make(map[string]*models.Image)
+	for _, image := range images {
+		imageMap[image.Token] = image
+	}
+
 	return &FakeImageStore{
 		t:      t,
-		images: make(map[string]*models.Image),
+		images: imageMap,
 	}
 }
 
@@ -47,6 +41,29 @@ func (s *FakeImageStore) GetImage(_ context.Context, token string) (*models.Imag
 		return image, nil
 	}
 	return nil, models.ErrImageNotFound
+}
+
+func (s *FakeImageStore) GetImageByURL(_ context.Context, url string) (*models.Image, error) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	for _, image := range s.images {
+		if image.URL == url {
+			return image, nil
+		}
+	}
+
+	return nil, models.ErrImageNotFound
+}
+
+func (s *FakeImageStore) URLExists(_ context.Context, url string) (bool, error) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	for _, image := range s.images {
+		if image.URL == url {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *FakeImageStore) GetImages(_ context.Context, tokens []string) ([]models.Image, []string, error) {
@@ -119,45 +136,19 @@ func (f *FakeAdminConfigStore) UpdateAdminConfiguration(cmd UpdateAdminConfigura
 	return nil
 }
 
-func SetupFolderService(tb testing.TB, cfg *setting.Cfg, dashboardStore dashboards.Store, folderStore *folderimpl.DashboardFolderStoreImpl, bus *bus.InProcBus) folder.Service {
-	tb.Helper()
+func SetupStoreForTesting(t *testing.T, db db.DB) *DBstore {
+	t.Helper()
+	cfg := setting.NewCfg()
+	cfg.UnifiedAlerting = setting.UnifiedAlertingSettings{BaseInterval: 1 * time.Second}
 
-	ac := acmock.New()
-	features := featuremgmt.WithFeatures()
+	service := foldertest.NewFakeService()
 
-	return folderimpl.ProvideService(ac, bus, cfg, dashboardStore, folderStore, nil, features)
-}
-
-func SetupDashboardService(tb testing.TB, sqlStore *sqlstore.SQLStore, fs *folderimpl.DashboardFolderStoreImpl, cfg *setting.Cfg) (*dashboardservice.DashboardServiceImpl, dashboards.Store) {
-	tb.Helper()
-
-	origNewGuardian := guardian.New
-	guardian.MockDashboardGuardian(&guardian.FakeDashboardGuardian{
-		CanSaveValue:  true,
-		CanViewValue:  true,
-		CanAdminValue: true,
-	})
-	tb.Cleanup(func() {
-		guardian.New = origNewGuardian
-	})
-
-	ac := acmock.New()
-	dashboardPermissions := acmock.NewMockedPermissionsService()
-	folderPermissions := acmock.NewMockedPermissionsService()
-	folderPermissions.On("SetPermissions", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]accesscontrol.ResourcePermission{}, nil)
-
-	features := featuremgmt.WithFeatures()
-	quotaService := quotatest.New(false, nil)
-
-	dashboardStore, err := database.ProvideDashboardStore(sqlStore, sqlStore.Cfg, features, tagimpl.ProvideService(sqlStore, sqlStore.Cfg), quotaService)
-	require.NoError(tb, err)
-
-	dashboardService, err := dashboardservice.ProvideDashboardServiceImpl(
-		cfg, dashboardStore, fs, nil,
-		features, folderPermissions, dashboardPermissions, ac,
-		foldertest.NewFakeService(),
-	)
-	require.NoError(tb, err)
-
-	return dashboardService, dashboardStore
+	store := &DBstore{
+		SQLStore:      db,
+		Cfg:           cfg.UnifiedAlerting,
+		FolderService: service,
+		Logger:        &logtest.Fake{},
+		Bus:           bus.ProvideBus(tracing.InitializeTracerForTest()),
+	}
+	return store
 }

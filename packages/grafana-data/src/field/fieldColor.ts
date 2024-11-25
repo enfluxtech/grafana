@@ -1,14 +1,17 @@
 import { interpolateRgbBasis } from 'd3-interpolate';
+import stringHash from 'string-hash';
 import tinycolor from 'tinycolor2';
 
+import { getContrastRatio } from '../themes/colorManipulator';
 import { GrafanaTheme2 } from '../themes/types';
 import { reduceField } from '../transformations/fieldReducer';
-import { FALLBACK_COLOR, Field, FieldColorModeId, Threshold } from '../types';
-import { RegistryItem } from '../utils';
-import { Registry } from '../utils/Registry';
+import { Field } from '../types/dataFrame';
+import { FALLBACK_COLOR, FieldColorModeId } from '../types/fieldColor';
+import { Threshold } from '../types/thresholds';
+import { Registry, RegistryItem } from '../utils/Registry';
 
 import { getScaleCalculator, ColorScaleValue } from './scale';
-import { fallBackTreshold } from './thresholds';
+import { fallBackThreshold } from './thresholds';
 
 /** @beta */
 export type FieldValueColorCalculator = (value: number, percent: number, Threshold?: Threshold) => string;
@@ -19,6 +22,7 @@ export interface FieldColorMode extends RegistryItem {
   getColors?: (theme: GrafanaTheme2) => string[];
   isContinuous?: boolean;
   isByValue?: boolean;
+  useSeriesName?: boolean;
 }
 
 /** @internal */
@@ -43,7 +47,7 @@ export const fieldColorModeRegistry = new Registry<FieldColorMode>(() => {
       description: 'Derive colors from thresholds',
       getCalculator: (_field, theme) => {
         return (_value, _percent, threshold) => {
-          const thresholdSafe = threshold ?? fallBackTreshold;
+          const thresholdSafe = threshold ?? fallBackThreshold;
           return theme.visualization.getColorByName(thresholdSafe.color);
         };
       },
@@ -55,6 +59,20 @@ export const fieldColorModeRegistry = new Registry<FieldColorMode>(() => {
       isByValue: false,
       getColors: (theme: GrafanaTheme2) => {
         return theme.visualization.palette;
+      },
+    }),
+    new FieldColorSchemeMode({
+      id: FieldColorModeId.PaletteClassicByName,
+      name: 'Classic palette (by series name)',
+      isContinuous: false,
+      isByValue: false,
+      useSeriesName: true,
+      getColors: (theme: GrafanaTheme2) => {
+        return theme.visualization.palette.filter(
+          (color) =>
+            getContrastRatio(theme.visualization.getColorByName(color), theme.colors.background.primary) >=
+            theme.colors.contrastThreshold
+        );
       },
     }),
     new FieldColorSchemeMode({
@@ -137,6 +155,7 @@ interface FieldColorSchemeModeOptions {
   getColors: (theme: GrafanaTheme2) => string[];
   isContinuous: boolean;
   isByValue: boolean;
+  useSeriesName?: boolean;
 }
 
 export class FieldColorSchemeMode implements FieldColorMode {
@@ -145,6 +164,7 @@ export class FieldColorSchemeMode implements FieldColorMode {
   description?: string;
   isContinuous: boolean;
   isByValue: boolean;
+  useSeriesName?: boolean;
   colorCache?: string[];
   colorCacheTheme?: GrafanaTheme2;
   interpolator?: (value: number) => string;
@@ -157,6 +177,7 @@ export class FieldColorSchemeMode implements FieldColorMode {
     this.getNamedColors = options.getColors;
     this.isContinuous = options.isContinuous;
     this.isByValue = options.isByValue;
+    this.useSeriesName = options.useSeriesName;
   }
 
   getColors(theme: GrafanaTheme2): string[] {
@@ -195,6 +216,10 @@ export class FieldColorSchemeMode implements FieldColorMode {
           return colors[percent * (colors.length - 1)];
         };
       }
+    } else if (this.useSeriesName) {
+      return (_: number, _percent: number, _threshold?: Threshold) => {
+        return colors[Math.abs(stringHash(field.state?.displayName ?? field.name)) % colors.length];
+      };
     } else {
       return (_: number, _percent: number, _threshold?: Threshold) => {
         const seriesIndex = field.state?.seriesIndex ?? 0;
@@ -225,7 +250,7 @@ export function getFieldSeriesColor(field: Field, theme: GrafanaTheme2): ColorSc
   if (!mode.isByValue) {
     return {
       color: mode.getCalculator(field, theme)(0, 0),
-      threshold: fallBackTreshold,
+      threshold: fallBackThreshold,
       percent: 1,
     };
   }

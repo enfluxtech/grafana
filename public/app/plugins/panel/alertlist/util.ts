@@ -1,20 +1,22 @@
 import { isEmpty } from 'lodash';
 
-import { Labels, PanelProps } from '@grafana/data';
-import { labelsMatchMatchers, parseMatchers } from 'app/features/alerting/unified/utils/alertmanager';
-import { replaceVariables } from 'app/plugins/datasource/prometheus/querybuilder/shared/parsingUtils';
+import { Labels } from '@grafana/data';
+import { labelsMatchMatchers } from 'app/features/alerting/unified/utils/alertmanager';
+import { parsePromQLStyleMatcherLooseSafe } from 'app/features/alerting/unified/utils/matchers';
 import { Alert, hasAlertState } from 'app/types/unified-alerting';
 import { GrafanaAlertState, PromAlertingRuleState } from 'app/types/unified-alerting-dto';
 
 import { UnifiedAlertListOptions } from './types';
 
 function hasLabelFilter(alertInstanceLabelFilter: string, labels: Labels) {
-  const replacedLabelFilter = replaceVariables(alertInstanceLabelFilter);
-  const matchers = parseMatchers(replacedLabelFilter);
+  const matchers = parsePromQLStyleMatcherLooseSafe(alertInstanceLabelFilter);
   return labelsMatchMatchers(labels, matchers);
 }
 
-export function filterAlerts(options: PanelProps<UnifiedAlertListOptions>['options'], alerts: Alert[]): Alert[] {
+export function filterAlerts(
+  options: Pick<UnifiedAlertListOptions, 'stateFilter' | 'alertInstanceLabelFilter'>,
+  alerts: Alert[]
+): Alert[] {
   const { stateFilter, alertInstanceLabelFilter } = options;
 
   if (isEmpty(stateFilter)) {
@@ -31,12 +33,7 @@ export function filterAlerts(options: PanelProps<UnifiedAlertListOptions>['optio
         (stateFilter.normal && hasAlertState(alert, GrafanaAlertState.Normal)) ||
         (stateFilter.error && hasAlertState(alert, GrafanaAlertState.Error)) ||
         (stateFilter.inactive && hasAlertState(alert, PromAlertingRuleState.Inactive))) &&
-      ((alertInstanceLabelFilter && hasLabelFilter(options.alertInstanceLabelFilter, alert.labels)) ||
-        !alertInstanceLabelFilter)
+      (alertInstanceLabelFilter ? hasLabelFilter(options.alertInstanceLabelFilter, alert.labels) : true)
     );
   });
-}
-
-export function isPrivateLabel(label: string) {
-  return !(label.startsWith('__') && label.endsWith('__'));
 }

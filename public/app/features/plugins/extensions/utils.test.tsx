@@ -1,6 +1,23 @@
-import { PluginExtensionLinkConfig, PluginExtensionTypes } from '@grafana/data';
+import { render, screen } from '@testing-library/react';
+import { type Unsubscribable } from 'rxjs';
 
-import { deepFreeze, isPluginExtensionLinkConfig, handleErrorsInFn } from './utils';
+import { dateTime, usePluginContext } from '@grafana/data';
+import appEvents from 'app/core/app_events';
+import { ShowModalReactEvent } from 'app/types/events';
+
+import { log } from './logs/log';
+import {
+  deepFreeze,
+  handleErrorsInFn,
+  getReadOnlyProxy,
+  createOpenModalFunction,
+  wrapWithPluginContext,
+} from './utils';
+
+jest.mock('app/features/plugins/pluginSettings', () => ({
+  ...jest.requireActual('app/features/plugins/pluginSettings'),
+  getPluginSettings: () => Promise.resolve({ info: { version: '1.0.0' } }),
+}));
 
 describe('Plugin Extensions / Utils', () => {
   describe('deepFreeze()', () => {
@@ -181,28 +198,6 @@ describe('Plugin Extensions / Utils', () => {
     });
   });
 
-  describe('isPluginExtensionLinkConfig()', () => {
-    test('should return TRUE if the object is a command extension config', () => {
-      expect(
-        isPluginExtensionLinkConfig({
-          type: PluginExtensionTypes.link,
-          title: 'Title',
-          description: 'Description',
-          path: '...',
-        } as PluginExtensionLinkConfig)
-      ).toBe(true);
-    });
-    test('should return FALSE if the object is NOT a link extension', () => {
-      expect(
-        isPluginExtensionLinkConfig({
-          title: 'Title',
-          description: 'Description',
-          path: '...',
-        } as PluginExtensionLinkConfig)
-      ).toBe(false);
-    });
-  });
-
   describe('handleErrorsInFn()', () => {
     test('should catch errors thrown by the provided function and print them as console warnings', () => {
       global.console.warn = jest.fn();
@@ -217,6 +212,239 @@ describe('Plugin Extensions / Utils', () => {
         // Logs the errors
         expect(console.warn).toHaveBeenCalledWith('Error: TEST');
       }).not.toThrow();
+    });
+  });
+
+  describe('getReadOnlyProxy()', () => {
+    it('should not be possible to modify values in proxied object', () => {
+      const proxy = getReadOnlyProxy({ a: 'a' });
+
+      expect(() => {
+        proxy.a = 'b';
+      }).toThrowError(TypeError);
+    });
+
+    it('should not be possible to modify values in proxied array', () => {
+      const proxy = getReadOnlyProxy([1, 2, 3]);
+
+      expect(() => {
+        proxy[0] = 2;
+      }).toThrowError(TypeError);
+    });
+
+    it('should not be possible to modify nested objects in proxied object', () => {
+      const proxy = getReadOnlyProxy({
+        a: {
+          c: 'c',
+        },
+        b: 'b',
+      });
+
+      expect(() => {
+        proxy.a.c = 'testing';
+      }).toThrowError(TypeError);
+    });
+
+    it('should not be possible to modify nested arrays in proxied object', () => {
+      const proxy = getReadOnlyProxy({
+        a: {
+          c: ['c', 'd'],
+        },
+        b: 'b',
+      });
+
+      expect(() => {
+        proxy.a.c[0] = 'testing';
+      }).toThrowError(TypeError);
+    });
+
+    it('should be possible to modify source object', () => {
+      const source = { a: 'b' };
+
+      getReadOnlyProxy(source);
+      source.a = 'c';
+
+      expect(source.a).toBe('c');
+    });
+
+    it('should be possible to modify source array', () => {
+      const source = ['a', 'b'];
+
+      getReadOnlyProxy(source);
+      source[0] = 'c';
+
+      expect(source[0]).toBe('c');
+    });
+
+    it('should be possible to modify nedsted objects in source object', () => {
+      const source = { a: { b: 'c' } };
+
+      getReadOnlyProxy(source);
+      source.a.b = 'd';
+
+      expect(source.a.b).toBe('d');
+    });
+
+    it('should be possible to modify nedsted arrays in source object', () => {
+      const source = { a: { b: ['c', 'd'] } };
+
+      getReadOnlyProxy(source);
+      source.a.b[0] = 'd';
+
+      expect(source.a.b[0]).toBe('d');
+    });
+
+    it('should be possible to call functions in proxied object', () => {
+      const proxy = getReadOnlyProxy({
+        a: () => 'testing',
+      });
+
+      expect(proxy.a()).toBe('testing');
+    });
+
+    it('should return a clone of moment/datetime in context', () => {
+      const source = dateTime('2023-10-26T18:25:01Z');
+      const proxy = getReadOnlyProxy({
+        a: source,
+      });
+
+      expect(source.isSame(proxy.a)).toBe(true);
+      expect(source).not.toBe(proxy.a);
+    });
+  });
+
+  describe('createOpenModalFunction()', () => {
+    let renderModalSubscription: Unsubscribable | undefined;
+
+    beforeAll(() => {
+      renderModalSubscription = appEvents.subscribe(ShowModalReactEvent, (event) => {
+        const { payload } = event;
+        const Modal = payload.component;
+        render(<Modal />);
+      });
+    });
+
+    afterAll(() => {
+      renderModalSubscription?.unsubscribe();
+    });
+
+    it('should open modal with provided title and body', async () => {
+      const pluginId = 'grafana-worldmap-panel';
+      const openModal = createOpenModalFunction(pluginId);
+
+      openModal({
+        title: 'Title in modal',
+        body: () => <div>Text in body</div>,
+      });
+
+      expect(await screen.findByRole('dialog')).toBeVisible();
+      expect(screen.getByRole('heading')).toHaveTextContent('Title in modal');
+      expect(screen.getByText('Text in body')).toBeVisible();
+    });
+
+    it('should open modal with default width if not specified', async () => {
+      const pluginId = 'grafana-worldmap-panel';
+      const openModal = createOpenModalFunction(pluginId);
+
+      openModal({
+        title: 'Title in modal',
+        body: () => <div>Text in body</div>,
+      });
+
+      const modal = await screen.findByRole('dialog');
+      const style = window.getComputedStyle(modal);
+
+      expect(style.width).toBe('750px');
+      expect(style.height).toBe('');
+    });
+
+    it('should open modal with specified width', async () => {
+      const pluginId = 'grafana-worldmap-panel';
+      const openModal = createOpenModalFunction(pluginId);
+
+      openModal({
+        title: 'Title in modal',
+        body: () => <div>Text in body</div>,
+        width: '70%',
+      });
+
+      const modal = await screen.findByRole('dialog');
+      const style = window.getComputedStyle(modal);
+
+      expect(style.width).toBe('70%');
+    });
+
+    it('should open modal with specified height', async () => {
+      const pluginId = 'grafana-worldmap-panel';
+      const openModal = createOpenModalFunction(pluginId);
+
+      openModal({
+        title: 'Title in modal',
+        body: () => <div>Text in body</div>,
+        height: 600,
+      });
+
+      const modal = await screen.findByRole('dialog');
+      const style = window.getComputedStyle(modal);
+
+      expect(style.height).toBe('600px');
+    });
+
+    it('should open modal with the plugin context being available', async () => {
+      const pluginId = 'grafana-worldmap-panel';
+      const openModal = createOpenModalFunction(pluginId);
+
+      const ModalContent = () => {
+        const context = usePluginContext();
+
+        return <div>Version: {context!.meta.info.version}</div>;
+      };
+
+      openModal({
+        title: 'Title in modal',
+        body: ModalContent,
+      });
+
+      const modal = await screen.findByRole('dialog');
+      expect(modal).toHaveTextContent('Version: 1.0.0');
+    });
+  });
+
+  describe('wrapExtensionComponentWithContext()', () => {
+    type ExampleComponentProps = {
+      audience?: string;
+    };
+
+    const ExampleComponent = (props: ExampleComponentProps) => {
+      const pluginContext = usePluginContext();
+
+      const audience = props.audience || 'Grafana';
+
+      return (
+        <div>
+          <h1>Hello {audience}!</h1> Version: {pluginContext!.meta.info.version}
+        </div>
+      );
+    };
+
+    it('should make the plugin context available for the wrapped component', async () => {
+      const pluginId = 'grafana-worldmap-panel';
+      const Component = wrapWithPluginContext(pluginId, ExampleComponent, log);
+
+      render(<Component />);
+
+      expect(await screen.findByText('Hello Grafana!')).toBeVisible();
+      expect(screen.getByText('Version: 1.0.0')).toBeVisible();
+    });
+
+    it('should pass the properties into the wrapped component', async () => {
+      const pluginId = 'grafana-worldmap-panel';
+      const Component = wrapWithPluginContext(pluginId, ExampleComponent, log);
+
+      render(<Component audience="folks" />);
+
+      expect(await screen.findByText('Hello folks!')).toBeVisible();
+      expect(screen.getByText('Version: 1.0.0')).toBeVisible();
     });
   });
 });

@@ -1,7 +1,7 @@
 import uPlot, { Scale, Range } from 'uplot';
 
 import { DecimalCount, incrRoundDn, incrRoundUp, isBooleanUnit } from '@grafana/data';
-import { ScaleOrientation, ScaleDirection, ScaleDistribution } from '@grafana/schema';
+import { ScaleOrientation, ScaleDirection, ScaleDistribution, StackingMode } from '@grafana/schema';
 
 import { PlotConfigBuilder } from '../types';
 
@@ -20,6 +20,7 @@ export interface ScaleProps {
   linearThreshold?: number;
   centeredZero?: boolean;
   decimals?: DecimalCount;
+  stackingMode?: StackingMode;
 }
 
 export class UPlotScaleBuilder extends PlotConfigBuilder<ScaleProps, Scale> {
@@ -41,7 +42,18 @@ export class UPlotScaleBuilder extends PlotConfigBuilder<ScaleProps, Scale> {
       orientation,
       centeredZero,
       decimals,
+      stackingMode,
     } = this.props;
+
+    if (stackingMode === StackingMode.Percent) {
+      if (hardMin == null && softMin == null) {
+        softMin = 0;
+      }
+
+      if (hardMax == null && softMax == null) {
+        softMax = 1;
+      }
+    }
 
     const distr = this.props.distribution;
 
@@ -51,12 +63,13 @@ export class UPlotScaleBuilder extends PlotConfigBuilder<ScaleProps, Scale> {
             distr === ScaleDistribution.Symlog
               ? 4
               : distr === ScaleDistribution.Log
-              ? 3
-              : distr === ScaleDistribution.Ordinal
-              ? 2
-              : 1,
-          log: distr === ScaleDistribution.Log || distr === ScaleDistribution.Symlog ? this.props.log ?? 2 : undefined,
-          asinh: distr === ScaleDistribution.Symlog ? this.props.linearThreshold ?? 1 : undefined,
+                ? 3
+                : distr === ScaleDistribution.Ordinal
+                  ? 2
+                  : 1,
+          log:
+            distr === ScaleDistribution.Log || distr === ScaleDistribution.Symlog ? (this.props.log ?? 2) : undefined,
+          asinh: distr === ScaleDistribution.Symlog ? (this.props.linearThreshold ?? 1) : undefined,
         }
       : {};
 
@@ -156,11 +169,6 @@ export class UPlotScaleBuilder extends PlotConfigBuilder<ScaleProps, Scale> {
 
       let minMax: uPlot.Range.MinMax = [dataMin, dataMax];
 
-      // don't pad numeric x scales
-      if (scaleKey === 'x' && !isTime) {
-        return minMax;
-      }
-
       // happens when all series on a scale are `show: false`, re-returning nulls will auto-disable axis
       if (!hasFixedRange && dataMin == null && dataMax == null) {
         return minMax;
@@ -173,6 +181,12 @@ export class UPlotScaleBuilder extends PlotConfigBuilder<ScaleProps, Scale> {
           let absMin = Math.abs(dataMin!);
           let absMax = Math.abs(dataMax!);
           let max = Math.max(absMin, absMax);
+
+          // flat 0
+          if (max === 0) {
+            max = 80;
+          }
+
           dataMin = -max;
           dataMax = max;
         }

@@ -13,6 +13,10 @@ keywords:
   - permission
   - permissions
   - acl
+labels:
+  products:
+    - enterprise
+    - oss
 title: Dashboard Permissions HTTP API
 ---
 
@@ -40,9 +44,12 @@ Gets all existing permissions for the dashboard with the given `uid`.
 
 See note in the [introduction]({{< ref "#dashboard-permission-api" >}}) for an explanation.
 
-| Action                        | Scope                                 |
-| ----------------------------- | ------------------------------------- |
-| `dashboards.permissions:read` | `dashboards:uid:*`<br>`folders:uid:*` |
+<!-- prettier-ignore-start -->
+| Action                        | Scope                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `dashboards.permissions:read` | <ul><li>`dashboards:*`</li><li>`dashboards:uid:*`</li><li>`folders:*`</li><li>`folders:uid:*`</li></ul> |
+{ .no-spacing-list }
+<!-- prettier-ignore-end -->
 
 **Example request**:
 
@@ -119,9 +126,12 @@ Updates permissions for a dashboard. This operation will remove existing permiss
 
 See note in the [introduction]({{< ref "#dashboard-permission-api" >}}) for an explanation.
 
-| Action                         | Scope                                 |
-| ------------------------------ | ------------------------------------- |
-| `dashboards.permissions:write` | `dashboards:uid:*`<br>`folders:uid:*` |
+<!-- prettier-ignore-start -->
+| Action                         | Scope                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `dashboards.permissions:write` | <ul><li>`dashboards:*`</li><li>`dashboards:uid:*`</li><li>`folders:*`</li><li>`folders:uid:*`</li></ul> |
+{ .no-spacing-list }
+<!-- prettier-ignore-end -->
 
 **Example request**:
 
@@ -176,7 +186,9 @@ Status Codes:
 
 ## Get permissions for a dashboard by id
 
-> **Warning:** This API is deprecated since Grafana v9.0.0 and will be removed in a future release. Refer to the [new dashboard permissions API](#get-permissions-for-a-dashboard).
+{{% admonition type="warning" %}}
+This API is deprecated since Grafana v9.0.0 and will be removed in a future release. Refer to the [new dashboard permissions API](#get-permissions-for-a-dashboard).
+{{% /admonition %}}
 
 `GET /api/dashboards/id/:dashboardId/permissions`
 
@@ -186,9 +198,12 @@ Gets all existing permissions for the dashboard with the given `dashboardId`.
 
 See note in the [introduction]({{< ref "#dashboard-permission-api" >}}) for an explanation.
 
-| Action                        | Scope                         |
-| ----------------------------- | ----------------------------- |
-| `dashboards.permissions:read` | `dashboards:*`<br>`folders:*` |
+<!-- prettier-ignore-start -->
+| Action                        | Scope                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `dashboards.permissions:read` | <ul><li>`dashboards:*`</li><li>`dashboards:uid:*`</li><li>`folders:*`</li><li>`folders:uid:*`</li></ul> |
+{ .no-spacing-list }
+<!-- prettier-ignore-end -->
 
 **Example request**:
 
@@ -257,7 +272,9 @@ Status Codes:
 
 ## Update permissions for a dashboard by id
 
-> **Warning:** This API is deprecated since Grafana v9.0.0 and will be removed in a future release. Refer to the [new dashboard permissions API](#update-permissions-for-a-dashboard).
+{{% admonition type="warning" %}}
+This API is deprecated since Grafana v9.0.0 and will be removed in a future release. Refer to the [new dashboard permissions API](#update-permissions-for-a-dashboard).
+{{% /admonition %}}
 
 `POST /api/dashboards/id/:dashboardId/permissions`
 
@@ -267,9 +284,12 @@ Updates permissions for a dashboard. This operation will remove existing permiss
 
 See note in the [introduction]({{< ref "#dashboard-permission-api" >}}) for an explanation.
 
-| Action                         | Scope                         |
-| ------------------------------ | ----------------------------- |
-| `dashboards.permissions:write` | `dashboards:*`<br>`folders:*` |
+<!-- prettier-ignore-start -->
+| Action                         | Scope                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `dashboards.permissions:write` | <ul><li>`dashboards:*`</li><li>`dashboards:uid:*`</li><li>`folders:*`</li><li>`folders:uid:*`</li></ul> |
+{ .no-spacing-list }
+<!-- prettier-ignore-end -->
 
 **Example request**:
 

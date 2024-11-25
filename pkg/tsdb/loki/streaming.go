@@ -15,8 +15,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
-func (s *Service) SubscribeStream(_ context.Context, req *backend.SubscribeStreamRequest) (*backend.SubscribeStreamResponse, error) {
-	dsInfo, err := s.getDSInfo(req.PluginContext)
+func (s *Service) SubscribeStream(ctx context.Context, req *backend.SubscribeStreamRequest) (*backend.SubscribeStreamResponse, error) {
+	dsInfo, err := s.getDSInfo(ctx, req.PluginContext)
 	if err != nil {
 		return &backend.SubscribeStreamResponse{
 			Status: backend.SubscribeStreamStatusNotFound,
@@ -34,7 +34,7 @@ func (s *Service) SubscribeStream(_ context.Context, req *backend.SubscribeStrea
 	if err != nil {
 		return nil, err
 	}
-	if query.Expr == "" {
+	if query.Expr != nil {
 		return &backend.SubscribeStreamResponse{
 			Status: backend.SubscribeStreamStatusNotFound,
 		}, fmt.Errorf("missing expr in channel (subscribe)")
@@ -60,7 +60,7 @@ func (s *Service) SubscribeStream(_ context.Context, req *backend.SubscribeStrea
 
 // Single instance for each channel (results are shared with all listeners)
 func (s *Service) RunStream(ctx context.Context, req *backend.RunStreamRequest, sender *backend.StreamSender) error {
-	dsInfo, err := s.getDSInfo(req.PluginContext)
+	dsInfo, err := s.getDSInfo(ctx, req.PluginContext)
 	if err != nil {
 		return err
 	}
@@ -69,18 +69,18 @@ func (s *Service) RunStream(ctx context.Context, req *backend.RunStreamRequest, 
 	if err != nil {
 		return err
 	}
-	if query.Expr == "" {
+	if query.Expr != nil {
 		return fmt.Errorf("missing expr in cuannel")
 	}
 
-	logger := logger.FromContext(ctx)
+	logger := s.logger.FromContext(ctx)
 	count := int64(0)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
 	params := url.Values{}
-	params.Add("query", query.Expr)
+	params.Add("query", *query.Expr)
 
 	wsurl, _ := url.Parse(dsInfo.URL)
 
@@ -93,10 +93,10 @@ func (s *Service) RunStream(ctx context.Context, req *backend.RunStreamRequest, 
 	}
 	wsurl.RawQuery = params.Encode()
 
-	logger.Info("connecting to websocket", "url", wsurl)
+	logger.Info("Connecting to websocket", "url", wsurl)
 	c, r, err := websocket.DefaultDialer.Dial(wsurl.String(), nil)
 	if err != nil {
-		logger.Error("error connecting to websocket", "err", err)
+		logger.Error("Error connecting to websocket", "err", err)
 		return fmt.Errorf("error connecting to websocket")
 	}
 
@@ -108,7 +108,7 @@ func (s *Service) RunStream(ctx context.Context, req *backend.RunStreamRequest, 
 			_ = r.Body.Close()
 		}
 		err = c.Close()
-		logger.Error("closing loki websocket", "err", err)
+		logger.Error("Closing loki websocket", "err", err)
 	}()
 
 	prev := data.FrameJSONCache{}
@@ -120,7 +120,7 @@ func (s *Service) RunStream(ctx context.Context, req *backend.RunStreamRequest, 
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				logger.Error("websocket read:", "err", err)
+				logger.Error("Websocket read:", "err", err)
 				return
 			}
 
@@ -143,26 +143,26 @@ func (s *Service) RunStream(ctx context.Context, req *backend.RunStreamRequest, 
 			}
 
 			if err != nil {
-				logger.Error("websocket write:", "err", err, "raw", message)
+				logger.Error("Websocket write:", "err", err, "raw", message)
 				return
 			}
 		}
 	}()
 
-	ticker := time.NewTicker(time.Second * 60) //.Step)
+	ticker := time.NewTicker(time.Second * 60) // .Step)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-done:
-			logger.Info("socket done")
+			logger.Info("Socket done")
 			return nil
 		case <-ctx.Done():
-			logger.Info("stop streaming (context canceled)")
+			logger.Info("Stop streaming (context canceled)")
 			return nil
 		case t := <-ticker.C:
 			count++
-			logger.Error("loki websocket ping?", "time", t, "count", count)
+			logger.Error("Loki websocket ping?", "time", t, "count", count)
 		}
 	}
 }

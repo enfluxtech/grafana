@@ -1,14 +1,15 @@
-import { createTheme } from '../themes';
-import { Field, FieldColorModeId, FieldType } from '../types';
-import { ArrayVector } from '../vector/ArrayVector';
+import { createTheme } from '../themes/createTheme';
+import { DataFrame, Field, FieldType } from '../types/dataFrame';
+import { FieldColorModeId } from '../types/fieldColor';
 
 import { fieldColorModeRegistry, FieldValueColorCalculator, getFieldSeriesColor } from './fieldColor';
+import { cacheFieldDisplayNames } from './fieldState';
 
-function getTestField(mode: string, fixedColor?: string): Field {
+function getTestField(mode: string, fixedColor?: string, name = 'name'): Field {
   return {
-    name: 'name',
+    name: name,
     type: FieldType.number,
-    values: new ArrayVector(),
+    values: [],
     config: {
       color: {
         mode: mode,
@@ -22,11 +23,12 @@ function getTestField(mode: string, fixedColor?: string): Field {
 interface GetCalcOptions {
   mode: string;
   seriesIndex?: number;
+  name?: string;
   fixedColor?: string;
 }
 
 function getCalculator(options: GetCalcOptions): FieldValueColorCalculator {
-  const field = getTestField(options.mode, options.fixedColor);
+  const field = getTestField(options.mode, options.fixedColor, options.name);
   const mode = fieldColorModeRegistry.get(options.mode);
   field.state!.seriesIndex = options.seriesIndex;
   return mode.getCalculator(field, createTheme());
@@ -39,13 +41,80 @@ describe('fieldColorModeRegistry', () => {
   });
 
   it('Palette classic with series index 0', () => {
-    const calcFn = getCalculator({ mode: FieldColorModeId.PaletteClassic, seriesIndex: 0 });
+    const calcFn = getCalculator({ mode: FieldColorModeId.PaletteClassic, seriesIndex: 0, name: 'series1' });
     expect(calcFn(70, 0, undefined)).toEqual('#73BF69');
   });
 
   it('Palette classic with series index 1', () => {
-    const calcFn = getCalculator({ mode: FieldColorModeId.PaletteClassic, seriesIndex: 1 });
+    const calcFn = getCalculator({ mode: FieldColorModeId.PaletteClassic, seriesIndex: 1, name: 'series2' });
     expect(calcFn(70, 0, undefined)).toEqual('#F2CC0C');
+  });
+
+  it('Palette uses name', () => {
+    const calcFn1 = getCalculator({ mode: FieldColorModeId.PaletteClassicByName, seriesIndex: 0, name: 'same name' });
+    const calcFn2 = getCalculator({ mode: FieldColorModeId.PaletteClassicByName, seriesIndex: 1, name: 'same name' });
+    expect(calcFn1(12, 34, undefined)).toEqual(calcFn2(56, 78, undefined));
+  });
+
+  it('Palette uses displayName with Value fields', () => {
+    let frames: DataFrame[] = [
+      {
+        length: 0,
+        fields: [
+          {
+            name: 'Time',
+            type: FieldType.time,
+            values: [],
+            config: {},
+          },
+          {
+            name: 'Value',
+            labels: { foo: 'bar' },
+            type: FieldType.number,
+            values: [],
+            config: {
+              color: {
+                mode: FieldColorModeId.PaletteClassicByName,
+              },
+            },
+            state: {},
+          },
+        ],
+      },
+      {
+        length: 0,
+        fields: [
+          {
+            name: 'Time',
+            type: FieldType.time,
+            values: [],
+            config: {},
+          },
+          {
+            name: 'Value',
+            labels: { foo: 'baz' },
+            type: FieldType.number,
+            values: [],
+            config: {
+              color: {
+                mode: FieldColorModeId.PaletteClassicByName,
+              },
+            },
+            state: {},
+          },
+        ],
+      },
+    ];
+
+    cacheFieldDisplayNames(frames);
+
+    const mode = fieldColorModeRegistry.get(FieldColorModeId.PaletteClassicByName);
+
+    const calcFn1 = mode.getCalculator(frames[0].fields[1], createTheme());
+    const calcFn2 = mode.getCalculator(frames[1].fields[1], createTheme());
+
+    expect(calcFn1(0, 0)).toEqual('#82B5D8');
+    expect(calcFn2(0, 0)).toEqual('#FCE2DE');
   });
 
   it('When color.seriesBy is set to last use that instead of v', () => {
@@ -54,7 +123,7 @@ describe('fieldColorModeRegistry', () => {
     field.config.color!.seriesBy = 'last';
     // min = -10, max = 10, last = 5
     // last percent 75%
-    field.values = new ArrayVector([0, -10, 5, 10, 2, 5]);
+    field.values = [0, -10, 5, 10, 2, 5];
 
     const color = getFieldSeriesColor(field, createTheme());
     const calcFn = getCalculator({ mode: 'continuous-GrYlRd' });
@@ -77,7 +146,7 @@ describe('fieldColorModeRegistry', () => {
 
 describe('getFieldSeriesColor', () => {
   const field = getTestField('continuous-GrYlRd');
-  field.values = new ArrayVector([0, -10, 5, 10, 2, 5]);
+  field.values = [0, -10, 5, 10, 2, 5];
 
   it('When color.seriesBy is last use that to calc series color', () => {
     field.config.color!.seriesBy = 'last';

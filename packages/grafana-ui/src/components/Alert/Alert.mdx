@@ -1,4 +1,4 @@
-import { Meta, Props, ArgsTable } from '@storybook/addon-docs/blocks';
+import { Meta, ArgTypes } from '@storybook/blocks';
 import { Alert } from './Alert';
 
 <Meta title="MDX|Alert" component={Alert} />
@@ -104,9 +104,7 @@ Inline Banners are task-oriented alerts that notify users of the status of an ac
 
 ```jsx
 <Alert title={title} severity={severity} buttonContent={buttonContent} onRemove={onRemove}>
-  <VerticalGroup>
-    <div>Child content that includes some alert details, like maybe what actually happened.</div>
-  </VerticalGroup>
+  Child content that includes some alert details, like maybe what actually happened.</div>
 </Alert>
 ```
 
@@ -149,10 +147,8 @@ appEvents.publish({
 
 ```jsx
 <Alert title={title} severity={severity} onRemove={onRemove} elevated>
-  <VerticalGroup>
-    <div>Child content that includes some alert details, like maybe what actually happened.</div>
-  </VerticalGroup>
+  Child content that includes some alert details, like maybe what actually happened.
 </Alert>
 ```
 
-<ArgsTable of={Alert} />
+<ArgTypes of={Alert} />

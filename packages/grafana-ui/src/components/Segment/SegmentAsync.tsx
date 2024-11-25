@@ -1,6 +1,7 @@
 import { cx } from '@emotion/css';
 import { isObject } from 'lodash';
-import React, { HTMLProps } from 'react';
+import { HTMLProps } from 'react';
+import * as React from 'react';
 import { useAsyncFn } from 'react-use';
 import { AsyncState } from 'react-use/lib/useAsync';
 
@@ -12,8 +13,8 @@ import { InlineLabel } from '../Forms/InlineLabel';
 
 import { SegmentSelect } from './SegmentSelect';
 import { getSegmentStyles } from './styles';
-
-import { useExpandableLabel, SegmentProps } from '.';
+import { SegmentProps } from './types';
+import { useExpandableLabel } from './useExpandableLabel';
 
 export interface SegmentAsyncProps<T> extends SegmentProps, Omit<HTMLProps<HTMLDivElement>, 'value' | 'onChange'> {
   value?: T | SelectableValue<T>;
@@ -110,9 +111,5 @@ function mapStateToNoOptionsMessage<T>(state: AsyncState<Array<SelectableValue<T
     return t('grafana-ui.segment-async.error', 'Failed to load options');
   }
 
-  if (!Array.isArray(state.value) || state.value.length === 0) {
-    return t('grafana-ui.segment-async.no-options', 'No options found');
-  }
-
-  return '';
+  return t('grafana-ui.segment-async.no-options', 'No options found');
 }
