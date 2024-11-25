@@ -24,7 +24,7 @@ COPY conf/defaults.ini ./conf/defaults.ini
 
 RUN apk add --no-cache make build-base python3
 
-RUN yarn install
+RUN yarn install --immutable
 
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
@@ -96,9 +96,12 @@ FROM ${BASE_IMAGE} as tgz-builder
 
 WORKDIR /tmp/grafana
 
-COPY ./public ./public
-COPY ./scripts ./scripts
-COPY ./plugins-bundled ./plugins-bundled
+ARG GRAFANA_TGZ="grafana-latest.linux-x64-musl.tar.gz"
+
+COPY ${GRAFANA_TGZ} /tmp/grafana.tar.gz
+
+# add -v to make tar print every file it extracts
+RUN tar x -z -f /tmp/grafana.tar.gz --strip-components=1
 
 # helpers for COPY --from
 FROM ${GO_SRC} as go-src
