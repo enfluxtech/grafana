@@ -11,6 +11,7 @@ import (
 //     Responses:
 //       200: Route
 //         description: The currently active notification routing tree
+//       403: ForbiddenError
 
 // swagger:route PUT /v1/provisioning/policies provisioning stable RoutePutPolicyTree
 //
@@ -22,6 +23,7 @@ import (
 //     Responses:
 //       202: Ack
 //       400: ValidationError
+//       403: ForbiddenError
 
 // swagger:route DELETE /v1/provisioning/policies provisioning stable RouteResetPolicyTree
 //
@@ -32,6 +34,7 @@ import (
 //
 //     Responses:
 //       202: Ack
+//       403: ForbiddenError
 
 // swagger:route GET /v1/provisioning/policies/export provisioning stable RouteGetPolicyTreeExport
 //
@@ -46,6 +49,7 @@ import (
 //
 //     Responses:
 //       200: AlertingFileExport
+//       403: ForbiddenError
 //       404: NotFound
 
 // swagger:parameters RoutePutPolicyTree
@@ -81,6 +85,7 @@ type RouteExport struct {
 	ObjectMatchers      ObjectMatchers      `yaml:"object_matchers,omitempty" json:"object_matchers,omitempty"`
 	ObjectMatchersSlice []*MatcherExport    `yaml:"-" json:"-" hcl:"matcher,block"`
 	MuteTimeIntervals   *[]string           `yaml:"mute_time_intervals,omitempty" json:"mute_time_intervals,omitempty" hcl:"mute_timings"`
+	ActiveTimeIntervals *[]string           `yaml:"active_time_intervals,omitempty" json:"active_time_intervals,omitempty" hcl:"active_timings"`
 	Continue            *bool               `yaml:"continue,omitempty" json:"continue,omitempty" hcl:"continue,optional"` // Added omitempty to yaml for a cleaner export.
 	Routes              []*RouteExport      `yaml:"routes,omitempty" json:"routes,omitempty" hcl:"policy,block"`
 

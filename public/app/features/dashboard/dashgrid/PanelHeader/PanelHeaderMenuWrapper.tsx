@@ -1,8 +1,9 @@
 import * as React from 'react';
 
-import { LoadingState } from '@grafana/data';
+import { type LoadingState } from '@grafana/data';
 
-import { DashboardModel, PanelModel } from '../../state';
+import { type DashboardModel } from '../../state/DashboardModel';
+import { type PanelModel } from '../../state/PanelModel';
 
 import { PanelHeaderMenu } from './PanelHeaderMenu';
 import { PanelHeaderMenuProvider } from './PanelHeaderMenuProvider';

@@ -1,17 +1,15 @@
-import { PanelMenuItem, urlUtil, PluginExtensionLink } from '@grafana/data';
-import { AngularComponent, locationService } from '@grafana/runtime';
-import { PanelCtrl } from 'app/angular/panel/panel_ctrl';
-import config from 'app/core/config';
+import { type PanelMenuItem, urlUtil, type PluginExtensionLink } from '@grafana/data';
+import { t } from '@grafana/i18n';
+import { locationService } from '@grafana/runtime';
 import { createErrorNotification } from 'app/core/copy/appNotification';
-import { t } from 'app/core/internationalization';
 import { notifyApp } from 'app/core/reducers/appNotification';
 import { contextSrv } from 'app/core/services/context_srv';
 import { getMessageFromError } from 'app/core/utils/errors';
 import { getExploreUrl } from 'app/core/utils/explore';
-import { RuleFormValues } from 'app/features/alerting/unified/types/rule-form';
+import { type RuleFormValues } from 'app/features/alerting/unified/types/rule-form';
 import { panelToRuleFormValues } from 'app/features/alerting/unified/utils/rule-form';
-import { DashboardModel } from 'app/features/dashboard/state/DashboardModel';
-import { PanelModel } from 'app/features/dashboard/state/PanelModel';
+import { type DashboardModel } from 'app/features/dashboard/state/DashboardModel';
+import { type PanelModel } from 'app/features/dashboard/state/PanelModel';
 import {
   addLibraryPanel,
   copyPanel,
@@ -23,19 +21,19 @@ import {
 } from 'app/features/dashboard/utils/panel';
 import { InspectTab } from 'app/features/inspector/types';
 import { isPanelModelLibraryPanel } from 'app/features/library-panels/guard';
-import { createExtensionSubMenu } from 'app/features/plugins/extensions/utils';
-import { SHARED_DASHBOARD_QUERY } from 'app/plugins/datasource/dashboard';
-import { dispatch, store } from 'app/store/store';
+import { SHARED_DASHBOARD_QUERY } from 'app/plugins/datasource/dashboard/constants';
+import { dispatch } from 'app/store/store';
 
 import { getCreateAlertInMenuAvailability } from '../../alerting/unified/utils/access-control';
 import { navigateToExplore } from '../../explore/state/main';
 import { getTimeSrv } from '../services/TimeSrv';
 
+import { appendExtensionsToPanelMenu } from './appendExtensionsToPanelMenu';
+
 export function getPanelMenu(
   dashboard: DashboardModel,
   panel: PanelModel,
-  extensions: PluginExtensionLink[],
-  angularComponent?: AngularComponent | null
+  extensions: PluginExtensionLink[]
 ): PanelMenuItem[] {
   const onViewPanel = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -90,14 +88,13 @@ export function getPanelMenu(
 
   const onNavigateToExplore = (event: React.MouseEvent) => {
     event.preventDefault();
-    const openInNewWindow =
-      event.ctrlKey || event.metaKey ? (url: string) => window.open(`${config.appSubUrl}${url}`) : undefined;
-    store.dispatch(
+    const openInNewWindow = event.ctrlKey || event.metaKey ? (url: string) => window.open(url) : undefined;
+    dispatch(
       navigateToExplore(panel, {
         timeRange: getTimeSrv().timeRange(),
         getExploreUrl,
         openInNewWindow,
-      }) as any
+      })
     );
   };
 
@@ -187,7 +184,7 @@ export function getPanelMenu(
     }
     const ruleFormUrl = urlUtil.renderUrl('/alerting/new', {
       defaults: JSON.stringify(formValues),
-      returnTo: location.pathname + location.search,
+      returnTo: window.location.pathname + window.location.search,
     });
 
     locationService.push(ruleFormUrl);
@@ -242,29 +239,6 @@ export function getPanelMenu(
     });
   }
 
-  // add old angular panel options
-  if (angularComponent) {
-    const scope = angularComponent.getScope();
-    const panelCtrl: PanelCtrl = scope.$$childHead.ctrl;
-    const angularMenuItems = panelCtrl.getExtendedMenu();
-
-    for (const item of angularMenuItems) {
-      const reactItem: PanelMenuItem = {
-        text: item.text,
-        href: item.href,
-        shortcut: item.shortcut,
-      };
-
-      if (item.click) {
-        reactItem.onClick = () => {
-          scope.$eval(item.click, { ctrl: panelCtrl });
-        };
-      }
-
-      subMenu.push(reactItem);
-    }
-  }
-
   if (panel.options.legend) {
     subMenu.push({
       text: panel.options.legend.showLegend
@@ -294,11 +268,17 @@ export function getPanelMenu(
   }
 
   if (extensions.length > 0 && !panel.isEditing) {
-    menu.push({
-      text: 'Extensions',
-      iconClassName: 'plug',
-      type: 'submenu',
-      subMenu: createExtensionSubMenu(extensions),
+    const extensionsSubmenuName = t('dashboard.get-panel-menu.text.extensions', 'Extensions');
+    const reservedNames = new Set<string>(menu.map((m) => m.text));
+    reservedNames.add(t('panel.header-menu.more', `More...`));
+    reservedNames.add(t('panel.header-menu.remove', `Remove`));
+    reservedNames.add(extensionsSubmenuName);
+
+    appendExtensionsToPanelMenu({
+      extensionsSubmenuName,
+      rootMenu: menu,
+      extensions,
+      reservedNames,
     });
   }
 

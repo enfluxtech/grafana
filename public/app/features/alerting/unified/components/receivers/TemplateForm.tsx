@@ -1,13 +1,14 @@
 import { css, cx } from '@emotion/css';
 import { addMinutes, subDays, subHours } from 'date-fns';
-import { Location } from 'history';
+import { type Location } from 'history';
 import { useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { useToggle } from 'react-use';
 import AutoSizer from 'react-virtualized-auto-sizer';
 
-import { GrafanaTheme2 } from '@grafana/data';
-import { isFetchError, locationService } from '@grafana/runtime';
+import { type GrafanaTheme2 } from '@grafana/data';
+import { Trans, t } from '@grafana/i18n';
+import { config, isFetchError, locationService } from '@grafana/runtime';
 import {
   Alert,
   Box,
@@ -25,25 +26,29 @@ import {
   useStyles2,
 } from '@grafana/ui';
 import { useAppNotification } from 'app/core/copy/appNotification';
-import { useCleanup } from 'app/core/hooks/useCleanup';
-import { t, Trans } from 'app/core/internationalization';
+import { contextSrv } from 'app/core/services/context_srv';
 import { ActiveTab as ContactPointsActiveTabs } from 'app/features/alerting/unified/components/contact-points/ContactPoints';
-import { TestTemplateAlert } from 'app/plugins/datasource/alertmanager/types';
+import { type TestTemplateAlert } from 'app/plugins/datasource/alertmanager/types';
+import { AccessControlAction } from 'app/types/accessControl';
 
-import { AppChromeUpdate } from '../../../../../core/components/AppChrome/AppChromeUpdate';
-import { useUnifiedAlertingSelector } from '../../hooks/useUnifiedAlertingSelector';
+import { AITemplateButtonComponent } from '../../enterprise-components/AI/AIGenTemplateButton/addAITemplateButton';
+import { KnownProvenance } from '../../types/knownProvenance';
 import { GRAFANA_RULES_SOURCE_NAME } from '../../utils/datasource';
+import { DOCS_URL_TEMPLATE_EXAMPLES, DOCS_URL_TEMPLATE_NOTIFICATIONS } from '../../utils/docs';
+import { isProvisionedResource } from '../../utils/k8s/utils';
 import { makeAMLink, stringifyErrorLike } from '../../utils/misc';
-import { initialAsyncRequestState } from '../../utils/redux';
-import { ProvisionedResource, ProvisioningAlert } from '../Provisioning';
-import { EditorColumnHeader } from '../contact-points/templates/EditorColumnHeader';
+import { ALERTING_PATHS } from '../../utils/navigation';
+import { EditorColumnHeader } from '../EditorColumnHeader';
+import { ImportedResourceAlert, ProvisionedResource, ProvisioningAlert } from '../Provisioning';
+import { Spacer } from '../Spacer';
 import {
-  NotificationTemplate,
+  type NotificationTemplate,
   useCreateNotificationTemplate,
   useNotificationTemplateMetadata,
   useUpdateNotificationTemplate,
   useValidateNotificationTemplate,
 } from '../contact-points/useNotificationTemplates';
+import { isLegacyTemplate } from '../contact-points/utils';
 
 import { PayloadEditor } from './PayloadEditor';
 import { TemplateDataDocs } from './TemplateDataDocs';
@@ -95,22 +100,37 @@ export const TemplateForm = ({ originalTemplate, prefill, alertmanager }: Props)
 
   const appNotification = useAppNotification();
 
-  const [createNewTemplate] = useCreateNotificationTemplate({ alertmanager });
-  const [updateTemplate] = useUpdateNotificationTemplate({ alertmanager });
+  const [createNewTemplate, { error: createTemplateError }] = useCreateNotificationTemplate({ alertmanager });
+  const [updateTemplate, { error: updateTemplateError }] = useUpdateNotificationTemplate({ alertmanager });
   const { titleIsUnique } = useValidateNotificationTemplate({ alertmanager, originalTemplate });
 
-  useCleanup((state) => (state.unifiedAlerting.saveAMConfig = initialAsyncRequestState));
   const formRef = useRef<HTMLFormElement>(null);
   const isGrafanaAlertManager = alertmanager === GRAFANA_RULES_SOURCE_NAME;
 
-  const { error } = useUnifiedAlertingSelector((state) => state.saveAMConfig);
+  // Check if user has permission to test templates
+  const canTestTemplates =
+    contextSrv.hasPermission(AccessControlAction.AlertingNotificationsTemplatesTest) ||
+    contextSrv.hasPermission(AccessControlAction.AlertingNotificationsWrite);
+
+  // Only show preview and payload panels if both conditions are met:
+  // 1. It's a Grafana Alertmanager
+  // 2. User has the test permission
+  const showPreviewAndPayload = isGrafanaAlertManager && canTestTemplates;
+
+  const error = updateTemplateError ?? createTemplateError;
 
   const [cheatsheetOpened, toggleCheatsheetOpened] = useToggle(false);
 
   const [payload, setPayload] = useState(defaultPayloadString);
   const [payloadFormatError, setPayloadFormatError] = useState<string | null>(null);
 
-  const { isProvisioned } = useNotificationTemplateMetadata(originalTemplate);
+  // AI feedback state
+  const [aiGeneratedTemplate, setAiGeneratedTemplate] = useState(false);
+
+  const { provenance } = useNotificationTemplateMetadata(originalTemplate);
+  const isProvisioned = isProvisionedResource(provenance);
+  const isImported = provenance === KnownProvenance.ConvertedPrometheus;
+  const isLegacy = originalTemplate ? isLegacyTemplate(originalTemplate) : false;
   const originalTemplatePrefill: TemplateFormValues | undefined = originalTemplate
     ? { title: originalTemplate.title, content: originalTemplate.content }
     : undefined;
@@ -118,16 +138,16 @@ export const TemplateForm = ({ originalTemplate, prefill, alertmanager }: Props)
   // splitter for template and payload editor
   const columnSplitter = useSplitter({
     direction: 'column',
-    // if Grafana Alertmanager, split 50/50, otherwise 100/0 because there is no payload editor
-    initialSize: isGrafanaAlertManager ? 0.5 : 1,
+    // if showing preview/payload panels, split 50/50, otherwise 100/0 because there is no payload editor
+    initialSize: showPreviewAndPayload ? 0.5 : 1,
     dragPosition: 'middle',
   });
 
   // splitter for template editor and preview
   const rowSplitter = useSplitter({
     direction: 'row',
-    // if Grafana Alertmanager, split 60/40, otherwise 100/0 because there is no preview
-    initialSize: isGrafanaAlertManager ? 0.6 : 1,
+    // if showing preview/payload panels, split 60/40, otherwise 100/0 because there is no preview
+    initialSize: showPreviewAndPayload ? 0.6 : 1,
     dragPosition: 'middle',
   });
 
@@ -145,9 +165,13 @@ export const TemplateForm = ({ originalTemplate, prefill, alertmanager }: Props)
   } = formApi;
 
   const submit = async (values: TemplateFormValues) => {
-    const returnLink = makeAMLink('/alerting/notifications', alertmanager, {
-      tab: ContactPointsActiveTabs.NotificationTemplates,
-    });
+    // V2 nav has dedicated templates page, legacy nav uses tab parameter
+    const useV2Nav = config.featureToggles.alertingNavigationV2;
+    const returnLink = useV2Nav
+      ? makeAMLink(ALERTING_PATHS.TEMPLATES, alertmanager)
+      : makeAMLink(ALERTING_PATHS.NOTIFICATIONS, alertmanager, {
+          tab: ContactPointsActiveTabs.NotificationTemplates,
+        });
 
     try {
       if (!originalTemplate) {
@@ -168,179 +192,227 @@ export const TemplateForm = ({ originalTemplate, prefill, alertmanager }: Props)
     setValue('content', newValue);
   };
 
-  const actionButtons = (
-    <Stack>
-      <Button onClick={() => formRef.current?.requestSubmit()} variant="primary" size="sm" disabled={isSubmitting}>
-        <Trans i18nKey="common.save">Save</Trans>
-      </Button>
-      <LinkButton
-        disabled={isSubmitting}
-        href={makeAMLink('alerting/notifications', alertmanager, {
-          tab: ContactPointsActiveTabs.NotificationTemplates,
-        })}
-        variant="secondary"
-        size="sm"
-      >
-        <Trans i18nKey="common.cancel">Cancel</Trans>
-      </LinkButton>
-    </Stack>
-  );
+  const handleTemplateGenerated = (template: string) => {
+    setValue('content', template);
+    setAiGeneratedTemplate(true);
+  };
 
   return (
     <>
       <FormProvider {...formApi}>
-        <AppChromeUpdate actions={actionButtons} />
-        <form onSubmit={handleSubmit(submit)} ref={formRef} className={styles.form} aria-label="Template form">
+        <form
+          onSubmit={handleSubmit(submit)}
+          ref={formRef}
+          className={styles.form}
+          aria-label={t('alerting.template-form.aria-label-template-form', 'Template form')}
+        >
           {/* error message */}
           {error && (
-            <Alert severity="error" title="Error saving template">
+            <Alert
+              severity="error"
+              title={t('alerting.template-form.title-error-saving-template', 'Error saving template')}
+            >
               {error.message || (isFetchError(error) && error.data?.message) || String(error)}
             </Alert>
           )}
           {/* warning about provisioned template */}
-          {isProvisioned && (
+          {isProvisioned && isImported && (
+            <Box grow={0}>
+              <ImportedResourceAlert resource={ProvisionedResource.Template} />
+            </Box>
+          )}
+          {isProvisioned && !isImported && (
             <Box grow={0}>
               <ProvisioningAlert resource={ProvisionedResource.Template} />
+            </Box>
+          )}
+          {isLegacy && (
+            <Box grow={0}>
+              <Alert
+                title={t('alerting.template-form.title-legacy', 'This template uses a legacy format')}
+                severity="warning"
+              >
+                <Trans i18nKey="alerting.template-form.body-legacy">
+                  This template was imported from a Mimir Alertmanager and uses a legacy format.
+                </Trans>
+              </Alert>
             </Box>
           )}
 
           {/* name field for the template */}
           <FieldSet disabled={isProvisioned} className={styles.fieldset}>
-            <InlineField
-              label="Template group name"
-              error={errors?.title?.message}
-              invalid={!!errors.title?.message}
-              required
-              className={styles.nameField}
-            >
-              <Input
-                {...register('title', {
-                  required: { value: true, message: 'Required.' },
-                  validate: { titleIsUnique },
-                })}
-                placeholder="Give your template group a name"
-                width={42}
-                autoFocus={true}
-                id="new-template-name"
-              />
-            </InlineField>
+            <Stack direction="column" gap={1} alignItems="stretch" minHeight="100%">
+              {/* name and save buttons */}
+              <Stack direction="row" alignItems="center">
+                <InlineField
+                  label={t('alerting.template-form.label-template-group-name', 'Template group name')}
+                  error={errors?.title?.message}
+                  invalid={!!errors.title?.message}
+                  required
+                >
+                  <Input
+                    {...register('title', {
+                      required: { value: true, message: t('alerting.template-form.message.required', 'Required.') },
+                      validate: { titleIsUnique },
+                    })}
+                    placeholder={t(
+                      'alerting.template-form.new-template-name-placeholder-give-your-template-group-a-name',
+                      'Give your template group a name'
+                    )}
+                    width={42}
+                    autoFocus={true}
+                    id="new-template-name"
+                  />
+                </InlineField>
+                <Spacer />
+                <Stack>
+                  <Button onClick={() => formRef.current?.requestSubmit()} variant="primary" disabled={isSubmitting}>
+                    <Trans i18nKey="common.save">Save</Trans>
+                  </Button>
+                  <LinkButton
+                    disabled={isSubmitting}
+                    href={makeAMLink('alerting/notifications', alertmanager, {
+                      tab: ContactPointsActiveTabs.NotificationTemplates,
+                    })}
+                    variant="secondary"
+                  >
+                    <Trans i18nKey="common.cancel">Cancel</Trans>
+                  </LinkButton>
+                </Stack>
+              </Stack>
 
-            {/* editor layout */}
-            <div {...rowSplitter.containerProps} className={styles.contentContainer}>
-              <div {...rowSplitter.primaryProps}>
-                {/* template content and payload editor column – full height and half-width */}
-                <div {...columnSplitter.containerProps} className={styles.contentField}>
-                  {/* template editor */}
-                  <div {...columnSplitter.primaryProps}>
-                    {/* primaryProps will set "minHeight: min-content;" so we have to make sure to apply minHeight to the child */}
-                    <div className={cx(styles.flexColumn, styles.containerWithBorderAndRadius, styles.minEditorSize)}>
-                      <div>
-                        <EditorColumnHeader
-                          label="Template group"
-                          actions={
-                            <>
-                              {/* examples dropdown – only available for Grafana Alertmanager */}
-                              {isGrafanaAlertManager && (
-                                <Dropdown
-                                  overlay={
-                                    <Menu>
-                                      {GlobalTemplateDataExamples.map((item, index) => (
+              {/* editor layout */}
+              <div {...rowSplitter.containerProps} className={styles.contentContainer}>
+                <div {...rowSplitter.primaryProps}>
+                  {/* template content and payload editor column – full height and half-width */}
+                  <div {...columnSplitter.containerProps} className={styles.contentField}>
+                    {/* template editor */}
+                    <div {...columnSplitter.primaryProps}>
+                      {/* primaryProps will set "minHeight: min-content;" so we have to make sure to apply minHeight to the child */}
+                      <div className={cx(styles.flexColumn, styles.containerWithBorderAndRadius, styles.minEditorSize)}>
+                        <div>
+                          <EditorColumnHeader
+                            label={t('alerting.template-form.label-template-group', 'Template group')}
+                            actions={
+                              <>
+                                {/* examples dropdown – only available for Grafana Alertmanager */}
+                                {isGrafanaAlertManager && (
+                                  <Dropdown
+                                    overlay={
+                                      <Menu>
+                                        {GlobalTemplateDataExamples.map((item, index) => (
+                                          <Menu.Item
+                                            key={index}
+                                            label={item.description}
+                                            onClick={() => appendExample(item.example)}
+                                          />
+                                        ))}
+                                        <Menu.Divider />
                                         <Menu.Item
-                                          key={index}
-                                          label={item.description}
-                                          onClick={() => appendExample(item.example)}
+                                          label={t(
+                                            'alerting.template-form.label-examples-documentation',
+                                            'Examples documentation'
+                                          )}
+                                          url={DOCS_URL_TEMPLATE_EXAMPLES}
+                                          target="_blank"
+                                          icon="external-link-alt"
                                         />
-                                      ))}
-                                      <Menu.Divider />
-                                      <Menu.Item
-                                        label={'Examples documentation'}
-                                        url="https://grafana.com/docs/grafana/latest/alerting/configure-notifications/template-notifications/examples/"
-                                        target="_blank"
-                                        icon="external-link-alt"
-                                      />
-                                    </Menu>
-                                  }
+                                      </Menu>
+                                    }
+                                  >
+                                    <Button variant="secondary" size="sm" icon="angle-down">
+                                      <Trans i18nKey="alerting.templates.editor.add-example">Add example</Trans>
+                                    </Button>
+                                  </Dropdown>
+                                )}
+                                {/* GenAI button – only available for Grafana Alertmanager and enterprise */}
+                                {isGrafanaAlertManager && (
+                                  <AITemplateButtonComponent
+                                    onTemplateGenerated={handleTemplateGenerated}
+                                    disabled={isProvisioned}
+                                  />
+                                )}
+                                <Button
+                                  icon="question-circle"
+                                  size="sm"
+                                  fill="outline"
+                                  variant="secondary"
+                                  onClick={toggleCheatsheetOpened}
                                 >
-                                  <Button variant="secondary" size="sm" icon="angle-down">
-                                    <Trans i18nKey="alerting.templates.editor.add-example">Add example</Trans>
-                                  </Button>
-                                </Dropdown>
-                              )}
-                              <Button
-                                icon="question-circle"
-                                size="sm"
-                                fill="outline"
-                                variant="secondary"
-                                onClick={toggleCheatsheetOpened}
-                              >
-                                <Trans i18nKey="common.help">Help</Trans>
-                              </Button>
-                            </>
-                          }
-                        />
-                      </div>
-                      <Box flex={1}>
-                        <AutoSizer>
-                          {({ width, height }) => (
-                            <TemplateEditor
-                              value={getValues('content')}
-                              onBlur={(value) => setValue('content', value)}
-                              containerStyles={styles.editorContainer}
-                              width={width}
-                              height={height}
-                            />
-                          )}
-                        </AutoSizer>
-                      </Box>
-                    </div>
-                  </div>
-                  {/* payload editor – only available for Grafana Alertmanager */}
-                  {isGrafanaAlertManager && (
-                    <>
-                      <div {...columnSplitter.splitterProps} />
-                      <div {...columnSplitter.secondaryProps}>
-                        <div
-                          className={cx(
-                            styles.containerWithBorderAndRadius,
-                            styles.minEditorSize,
-                            styles.payloadEditor,
-                            styles.flexFull
-                          )}
-                        >
-                          <PayloadEditor
-                            payload={payload}
-                            defaultPayload={defaultPayloadString}
-                            setPayload={setPayload}
-                            setPayloadFormatError={setPayloadFormatError}
-                            payloadFormatError={payloadFormatError}
+                                  <Trans i18nKey="common.help">Help</Trans>
+                                </Button>
+                              </>
+                            }
                           />
                         </div>
+                        <Box flex={1}>
+                          <AutoSizer>
+                            {({ width, height }) => (
+                              <TemplateEditor
+                                value={getValues('content')}
+                                onBlur={(value) => setValue('content', value)}
+                                containerStyles={styles.editorContainer}
+                                width={width}
+                                height={height}
+                              />
+                            )}
+                          </AutoSizer>
+                        </Box>
                       </div>
-                    </>
-                  )}
+                    </div>
+                    {/* payload editor – only shown if user has test permission */}
+                    {showPreviewAndPayload && (
+                      <>
+                        <div {...columnSplitter.splitterProps} />
+                        <div {...columnSplitter.secondaryProps}>
+                          <div
+                            className={cx(
+                              styles.containerWithBorderAndRadius,
+                              styles.minEditorSize,
+                              styles.payloadEditor,
+                              styles.flexFull
+                            )}
+                          >
+                            <PayloadEditor
+                              payload={payload}
+                              defaultPayload={defaultPayloadString}
+                              setPayload={setPayload}
+                              setPayloadFormatError={setPayloadFormatError}
+                              payloadFormatError={payloadFormatError}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-              {/* preview column – full height and half-width */}
-              {isGrafanaAlertManager && (
-                <>
+                {/* preview column – only shown if user has test permission */}
+                {showPreviewAndPayload && (
                   <div {...rowSplitter.secondaryProps}>
-                    <div {...rowSplitter.splitterProps}></div>
+                    <div {...rowSplitter.splitterProps} />
                     <TemplatePreview
                       payload={payload}
                       templateName={watch('title')}
+                      templateContent={watch('content')}
                       setPayloadFormatError={setPayloadFormatError}
                       payloadFormatError={payloadFormatError}
                       className={cx(styles.templatePreview, styles.minEditorSize)}
+                      aiGeneratedTemplate={aiGeneratedTemplate}
+                      setAiGeneratedTemplate={setAiGeneratedTemplate}
                     />
                   </div>
-                </>
-              )}
-            </div>
+                )}
+              </div>
+            </Stack>
           </FieldSet>
         </form>
       </FormProvider>
       {cheatsheetOpened && (
-        <Drawer title="Templating cheat sheet" onClose={toggleCheatsheetOpened} size="lg">
+        <Drawer
+          title={t('alerting.template-form.title-templating-cheat-sheet', 'Templating cheat sheet')}
+          onClose={toggleCheatsheetOpened}
+          size="lg"
+        >
           <TemplatingCheatSheet />
         </Drawer>
       )}
@@ -367,7 +439,7 @@ For detailed information about notification templates, refer to our documentatio
           <div style={{ whiteSpace: 'pre' }}>{intro}</div>
           <div>
             <LinkButton
-              href="https://grafana.com/docs/grafana/latest/alerting/manage-notifications/template-notifications/"
+              href={DOCS_URL_TEMPLATE_NOTIFICATIONS}
               target="_blank"
               icon="external-link-alt"
               variant="secondary"
@@ -439,9 +511,6 @@ export const getStyles = (theme: GrafanaTheme2) => {
     label: css({
       margin: 0,
     }),
-    nameField: css({
-      marginBottom: theme.spacing(1),
-    }),
     contentContainer: css({
       flex: 1,
       display: 'flex',
@@ -483,10 +552,15 @@ const defaultPayload: TestTemplateAlert[] = [
     status: 'firing',
     annotations: {
       summary: 'Instance instance1 has been down for more than 5 minutes',
+      description:
+        'The instance instance1 has been unreachable for more than 5 minutes, indicating a potential service outage.',
     },
     labels: {
       alertname: 'InstanceDown',
       instance: 'instance1',
+      severity: 'critical',
+      service: 'service1',
+      environment: 'production',
     },
     startsAt: subDays(new Date(), 1).toISOString(),
     endsAt: addMinutes(new Date(), 5).toISOString(),
@@ -497,10 +571,15 @@ const defaultPayload: TestTemplateAlert[] = [
     status: 'resolved',
     annotations: {
       summary: 'CPU usage above 90%',
+      description:
+        'The CPU usage on instance1 has exceeded 90% for an extended period, which may indicate performance issues or resource constraints.',
     },
     labels: {
       alertname: 'CpuUsage',
       instance: 'instance1',
+      severity: 'warning',
+      service: 'service1',
+      environment: 'dev',
     },
     startsAt: subHours(new Date(), 4).toISOString(),
     endsAt: new Date().toISOString(),

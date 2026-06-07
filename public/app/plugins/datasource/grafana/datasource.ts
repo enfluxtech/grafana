@@ -1,38 +1,38 @@
 import { isString } from 'lodash';
-import { from, merge, Observable, of } from 'rxjs';
+import { from, merge, type Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 import {
-  AnnotationQuery,
-  AnnotationQueryRequest,
+  type AnnotationQuery,
+  type AnnotationQueryRequest,
   DataFrameView,
-  DataQueryRequest,
-  DataQueryResponse,
-  DataSourceInstanceSettings,
-  TestDataSourceResponse,
+  type DataQueryRequest,
+  type DataQueryResponse,
+  type DataSourceInstanceSettings,
+  type TestDataSourceResponse,
   isValidLiveChannelAddress,
   MutableDataFrame,
   parseLiveChannelAddress,
-  toDataFrame,
   dataFrameFromJSON,
   LoadingState,
 } from '@grafana/data';
 import {
   DataSourceWithBackend,
-  getBackendSrv,
   getDataSourceSrv,
   getGrafanaLiveSrv,
   getTemplateSrv,
-  StreamingFrameOptions,
+  type StreamingFrameOptions,
 } from '@grafana/runtime';
-import { DataSourceRef } from '@grafana/schema';
+import { type DataSourceRef } from '@grafana/schema';
+import { annotationServer } from 'app/features/annotations/api';
 import { migrateDatasourceNameToRef } from 'app/features/dashboard/state/DashboardMigrator';
 
 import { getDashboardSrv } from '../../../features/dashboard/services/DashboardSrv';
 
 import AnnotationQueryEditor from './components/AnnotationQueryEditor';
+import { randomWalk } from './randomWalk';
 import { doTimeRegionQuery } from './timeRegions';
-import { GrafanaAnnotationQuery, GrafanaAnnotationType, GrafanaQuery, GrafanaQueryType } from './types';
+import { type GrafanaAnnotationQuery, GrafanaAnnotationType, type GrafanaQuery, GrafanaQueryType } from './types';
 
 let counter = 100;
 
@@ -108,7 +108,7 @@ export class GrafanaDatasource extends DataSourceWithBackend<GrafanaQuery> {
         continue;
       }
       if (target.queryType === GrafanaQueryType.TimeRegions) {
-        const frame = doTimeRegionQuery('', target.timeRegion!, request.range, request.timezone);
+        const frame = doTimeRegionQuery('', target.timeRegion!, request.range);
         results.push(
           of({
             data: frame ? [frame] : [],
@@ -143,10 +143,14 @@ export class GrafanaDatasource extends DataSourceWithBackend<GrafanaQuery> {
             buffer,
           })
         );
+      } else if (target.queryType === GrafanaQueryType.RandomWalk || !target.queryType) {
+        results.push(
+          of({
+            data: randomWalk(target, request),
+            state: LoadingState.Done,
+          })
+        );
       } else {
-        if (!target.queryType) {
-          target.queryType = GrafanaQueryType.RandomWalk;
-        }
         targets.push(target);
       }
     }
@@ -180,7 +184,7 @@ export class GrafanaDatasource extends DataSourceWithBackend<GrafanaQuery> {
         },
       ],
       maxDataPoints,
-    } as any).pipe(
+    } as DataQueryRequest<GrafanaQuery>).pipe(
       map((v) => {
         const frame = v.data[0] ?? new MutableDataFrame();
         return new DataFrameView<FileElement>(frame);
@@ -195,12 +199,7 @@ export class GrafanaDatasource extends DataSourceWithBackend<GrafanaQuery> {
   async getAnnotations(options: AnnotationQueryRequest<GrafanaQuery>): Promise<DataQueryResponse> {
     const query = options.annotation.target as GrafanaQuery;
     if (query?.queryType === GrafanaQueryType.TimeRegions) {
-      const frame = doTimeRegionQuery(
-        options.annotation.name,
-        query.timeRegion!,
-        options.range,
-        getDashboardSrv().getCurrent()?.timezone // Annotation queries don't include the timezone
-      );
+      const frame = doTimeRegionQuery(options.annotation.name, query.timeRegion!, options.range);
       return Promise.resolve({ data: frame ? [frame] : [] });
     }
 
@@ -246,12 +245,11 @@ export class GrafanaDatasource extends DataSourceWithBackend<GrafanaQuery> {
       params.tags = tags;
     }
 
-    const annotations = await getBackendSrv().get(
-      '/api/annotations',
+    const df = await annotationServer().query(
       params,
       `grafana-data-source-annotations-${annotation.name}-${options.dashboard?.uid}`
     );
-    return { data: [toDataFrame(annotations)] };
+    return { data: [df] };
   }
 
   testDatasource(): Promise<TestDataSourceResponse> {

@@ -2,16 +2,16 @@ import {
   CompletionItemKind,
   CompletionItemPriority,
   getStandardSQLCompletionProvider,
-  LanguageCompletionProvider,
-  LinkedToken,
-  PositionContext,
-  StatementPlacementProvider,
+  type LanguageCompletionProvider,
+  type LinkedToken,
+  type PositionContext,
+  type StatementPlacementProvider,
   SuggestionKind,
-  SuggestionKindProvider,
-  TableDefinition,
-  TableIdentifier,
+  type SuggestionKindProvider,
+  type TableDefinition,
+  type TableIdentifier,
   TokenType,
-} from '@grafana/experimental';
+} from '@grafana/plugin-ui';
 
 interface CompletionProviderGetterArgs {
   getMeta: (t?: TableIdentifier) => Promise<TableDefinition[]>;

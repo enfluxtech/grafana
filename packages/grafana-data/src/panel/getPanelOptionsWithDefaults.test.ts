@@ -1,19 +1,11 @@
-import {
-  ConfigOverrideRule,
-  FieldColorModeId,
-  FieldConfig,
-  FieldConfigProperty,
-  FieldConfigSource,
-  PanelPlugin,
-  standardEditorsRegistry,
-  standardFieldConfigEditorRegistry,
-  StandardOptionConfig,
-  ThresholdsMode,
-} from '@grafana/data';
+import { getPanelPlugin, mockStandardFieldConfigOptions } from '../../test';
+import { standardEditorsRegistry, standardFieldConfigEditorRegistry } from '../field/standardFieldConfigEditorRegistry';
+import { type FieldConfig } from '../types/dataFrame';
+import { FieldColorModeId } from '../types/fieldColor';
+import { type ConfigOverrideRule, FieldConfigProperty, type FieldConfigSource } from '../types/fieldOverrides';
+import { ThresholdsMode } from '../types/thresholds';
 
-import { getPanelPlugin } from '../../test/__mocks__/pluginMocks';
-import { mockStandardFieldConfigOptions } from '../../test/helpers/fieldConfig';
-
+import { type PanelPlugin, type StandardOptionConfig } from './PanelPlugin';
 import { getPanelOptionsWithDefaults, restoreCustomOverrideRules } from './getPanelOptionsWithDefaults';
 
 standardFieldConfigEditorRegistry.setInit(() => mockStandardFieldConfigOptions());

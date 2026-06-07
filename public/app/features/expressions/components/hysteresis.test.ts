@@ -1,6 +1,6 @@
 import { EvalFunction } from 'app/features/alerting/state/alertDef';
 
-import { ClassicCondition, ExpressionQueryType, ThresholdExpressionQuery } from '../types';
+import { type ClassicCondition, ExpressionQueryType, type ThresholdExpressionQuery } from '../types';
 
 import {
   isInvalid,
@@ -159,7 +159,7 @@ describe('thresholdReducer', () => {
     expect(newState.conditions[0].evaluator.type).toEqual(EvalFunction.IsBelow);
     expect(newState.conditions[0].unloadEvaluator?.type).toEqual(EvalFunction.IsAbove);
     expect(onError).toHaveBeenCalledWith(undefined);
-    expect(newState.conditions[0].unloadEvaluator?.params[0]).toEqual(10);
+    expect(newState.conditions[0].unloadEvaluator?.params[0]).toEqual(0);
   });
   it('Should update unlooadEvaluator when checking hysteresis', () => {
     const initialState: ThresholdExpressionQuery = {

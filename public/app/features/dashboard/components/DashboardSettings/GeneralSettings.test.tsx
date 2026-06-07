@@ -5,11 +5,11 @@ import { render } from 'test/test-utils';
 import { byRole } from 'testing-library-selector';
 
 import { selectors } from '@grafana/e2e-selectors';
-import { BackendSrv, setBackendSrv } from '@grafana/runtime';
+import { type BackendSrv, setBackendSrv } from '@grafana/runtime';
 
 import { createDashboardModelFixture } from '../../state/__fixtures__/dashboardFixtures';
 
-import { GeneralSettingsUnconnected as GeneralSettings, Props } from './GeneralSettings';
+import { GeneralSettingsUnconnected as GeneralSettings, type Props } from './GeneralSettings';
 
 setBackendSrv({
   get: jest.fn().mockResolvedValue([]),
@@ -23,7 +23,6 @@ const setupTestContext = (options: Partial<Props>) => {
         description: 'test dashboard description',
         timepicker: {
           refresh_intervals: ['5s', '10s', '30s', '1m', '5m', '15m', '30m', '1h', '2h', '1d', '2d'],
-          time_options: ['5m', '15m', '1h', '6h', '12h', '24h', '2d', '7d', '30d'],
           hidden: false,
         },
         timezone: 'utc',

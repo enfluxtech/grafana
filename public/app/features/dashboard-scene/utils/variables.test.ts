@@ -1,13 +1,14 @@
 import {
-  ConstantVariableModel,
-  CustomVariableModel,
-  DataSourceVariableModel,
-  GroupByVariableModel,
-  IntervalVariableModel,
+  type ConstantVariableModel,
+  type CustomVariableModel,
+  type DataSourceVariableModel,
+  type GroupByVariableModel,
+  type IntervalVariableModel,
   LoadingState,
-  QueryVariableModel,
-  TextBoxVariableModel,
-  TypedVariableModel,
+  type QueryVariableModel,
+  type SwitchVariableModel,
+  type TextBoxVariableModel,
+  type TypedVariableModel,
 } from '@grafana/data';
 import { config } from '@grafana/runtime';
 import {
@@ -17,9 +18,10 @@ import {
   GroupByVariable,
   QueryVariable,
   SceneVariableSet,
+  SwitchVariable,
 } from '@grafana/scenes';
-import { defaultDashboard, defaultTimePickerConfig, VariableType } from '@grafana/schema';
-import { DashboardModel } from 'app/features/dashboard/state';
+import { defaultDashboard, defaultTimePickerConfig, type VariableType } from '@grafana/schema';
+import { DashboardModel } from 'app/features/dashboard/state/DashboardModel';
 
 import { SnapshotVariable } from '../serialization/custom-variables/SnapshotVariable';
 import { NEW_LINK } from '../settings/links/utils';
@@ -102,6 +104,7 @@ describe('when creating variables objects', () => {
       type: 'custom',
       value: 'a',
       hide: 0,
+      valuesFormat: 'csv',
     });
   });
 
@@ -182,6 +185,7 @@ describe('when creating variables objects', () => {
       query: 'SHOW TAG VALUES  WITH KEY = "datacenter" ',
       refresh: 1,
       regex: '',
+      regexApplyTo: 'value',
       skipUrlSync: false,
       sort: 0,
       text: 'America',
@@ -411,6 +415,12 @@ describe('when creating variables objects', () => {
           operator: '=',
           value: 'test',
         },
+        {
+          key: 'originFilter',
+          operator: '=',
+          value: 'val',
+          origin: 'dashboard',
+        },
       ],
       baseFilters: [
         {
@@ -431,18 +441,33 @@ describe('when creating variables objects', () => {
       key: expect.any(String),
       description: 'Adhoc Description',
       allowCustomValue: false,
+      applicabilityEnabled: false,
       hide: 0,
       label: 'Adhoc Label',
       name: 'adhoc',
+      originFilters: [
+        {
+          key: 'originFilter',
+          operator: '=',
+          value: 'val',
+          origin: 'dashboard',
+        },
+      ],
       skipUrlSync: false,
       type: 'adhoc',
-      filterExpression: 'filterTest="test"',
+      filterExpression: 'originFilter="val",filterTest="test"',
       filters: [{ key: 'filterTest', operator: '=', value: 'test' }],
       baseFilters: [{ key: 'baseFilterTest', operator: '=', value: 'test' }],
       datasource: { uid: 'gdev-prometheus', type: 'prometheus' },
       applyMode: 'auto',
       useQueriesAsFilterForOptions: true,
       supportsMultiValueOperators: false,
+      collapsible: undefined,
+      $behaviors: undefined,
+      defaultKeys: undefined,
+      drilldownRecommendationsEnabled: undefined,
+      enableGroupBy: false,
+      layout: 'combobox',
     });
   });
 
@@ -501,10 +526,11 @@ describe('when creating variables objects', () => {
     expect(filterVarState).toEqual({
       key: expect.any(String),
       description: 'Adhoc Description',
-      allowCustomValue: true,
+      applicabilityEnabled: false,
       hide: 0,
       label: 'Adhoc Label',
       name: 'adhoc',
+      originFilters: [],
       skipUrlSync: false,
       type: 'adhoc',
       filterExpression: 'filterTest="test"',
@@ -528,6 +554,11 @@ describe('when creating variables objects', () => {
       ],
       useQueriesAsFilterForOptions: true,
       supportsMultiValueOperators: false,
+      collapsible: undefined,
+      $behaviors: undefined,
+      drilldownRecommendationsEnabled: undefined,
+      enableGroupBy: false,
+      layout: 'combobox',
     });
   });
 
@@ -557,6 +588,7 @@ describe('when creating variables objects', () => {
           type: 'prometheus',
         },
         multi: true,
+        allowCustomValue: true,
         options: [
           {
             selected: false,
@@ -582,6 +614,7 @@ describe('when creating variables objects', () => {
       expect(groupbyVarState).toEqual({
         key: expect.any(String),
         description: 'GroupBy Description',
+        applicabilityEnabled: false,
         hide: 0,
         defaultOptions: [
           {
@@ -608,6 +641,7 @@ describe('when creating variables objects', () => {
         value: [],
         datasource: { uid: 'gdev-prometheus', type: 'prometheus' },
         applyMode: 'auto',
+        allowCustomValue: true,
       });
     });
   });
@@ -638,6 +672,166 @@ describe('when creating variables objects', () => {
       };
 
       expect(() => createSceneVariableFromVariableModel(variable)).toThrow('Scenes: Unsupported variable type');
+    });
+  });
+
+  describe('when migrating a "switch" variable', () => {
+    const baseVariable: SwitchVariableModel = {
+      id: 'switch1',
+      global: false,
+      index: 0,
+      state: LoadingState.Done,
+      error: null,
+      name: 'switchVar',
+      label: 'Switch Label',
+      description: 'Switch Description',
+      type: 'switch',
+      rootStateKey: 'N4XLmH5Vz',
+      current: {
+        selected: true,
+        text: ['true'],
+        value: ['true'],
+      },
+      hide: 0,
+      skipUrlSync: false,
+      options: [
+        {
+          selected: false,
+          text: 'true',
+          value: 'true',
+        },
+        {
+          selected: true,
+          text: 'false',
+          value: 'false',
+        },
+      ],
+      query: '',
+    };
+    const baseExpectedState = {
+      description: 'Switch Description',
+      enabledValue: 'true',
+      disabledValue: 'false',
+      hide: 0,
+      label: 'Switch Label',
+      name: 'switchVar',
+      skipUrlSync: false,
+      type: 'switch',
+      value: 'true',
+    };
+
+    it('should migrate a "switch" variable with "true" value', () => {
+      const variable: SwitchVariableModel = {
+        ...baseVariable,
+        current: {
+          selected: true,
+          text: 'true',
+          value: 'true',
+        },
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable);
+      const { key, ...rest } = migrated.state;
+
+      expect(migrated).toBeInstanceOf(SwitchVariable);
+      expect(rest).toEqual({
+        ...baseExpectedState,
+        value: 'true',
+      });
+    });
+
+    it('should migrate a "switch" variable with "false" value', () => {
+      const variable: SwitchVariableModel = {
+        ...baseVariable,
+        current: {
+          selected: true,
+          text: 'false',
+          value: 'false',
+        },
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable);
+      const { key, ...rest } = migrated.state;
+
+      expect(migrated).toBeInstanceOf(SwitchVariable);
+      expect(rest).toEqual({
+        ...baseExpectedState,
+        value: 'false',
+      });
+    });
+
+    it('should migrate a switch variable with array "true" value', () => {
+      const variable: SwitchVariableModel = {
+        ...baseVariable,
+        current: {
+          selected: true,
+          text: ['true'],
+          value: ['true'],
+        },
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable);
+      const { key, ...rest } = migrated.state;
+
+      expect(migrated).toBeInstanceOf(SwitchVariable);
+      expect(rest).toEqual({
+        ...baseExpectedState,
+        value: 'true',
+      });
+    });
+
+    it('should migrate a switch variable with array "false" value', () => {
+      const variable: SwitchVariableModel = {
+        ...baseVariable,
+        current: {
+          selected: true,
+          text: ['false'],
+          value: ['false'],
+        },
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable);
+      const { key, ...rest } = migrated.state;
+
+      expect(migrated).toBeInstanceOf(SwitchVariable);
+      expect(rest).toEqual({
+        ...baseExpectedState,
+        value: 'false',
+      });
+    });
+
+    it('should migrate a "switch" variable with a custom value', () => {
+      const variable: SwitchVariableModel = {
+        ...baseVariable,
+        current: {
+          selected: true,
+          text: 'on',
+          value: 'on',
+        },
+        options: [
+          {
+            selected: true,
+            text: 'on',
+            value: 'on',
+          },
+          {
+            selected: false,
+            text: 'off',
+            value: 'off',
+          },
+        ],
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable);
+      const { key, ...rest } = migrated.state;
+
+      expect(migrated).toBeInstanceOf(SwitchVariable);
+      expect(rest).toEqual({
+        ...baseExpectedState,
+        disabledValue: 'off',
+        enabledValue: 'on',
+        value: 'on',
+      });
     });
   });
 
@@ -672,7 +866,6 @@ describe('when creating variables objects', () => {
     expect(migrated).toBeInstanceOf(DataSourceVariable);
     expect(rest).toEqual({
       allValue: 'Custom all',
-      allowCustomValue: true,
       defaultToAll: true,
       includeAll: true,
       label: undefined,
@@ -715,7 +908,6 @@ describe('when creating variables objects', () => {
     expect(migrated).toBeInstanceOf(DataSourceVariable);
     expect(rest).toEqual({
       allValue: 'Custom all',
-      allowCustomValue: true,
       defaultToAll: true,
       includeAll: true,
       label: undefined,

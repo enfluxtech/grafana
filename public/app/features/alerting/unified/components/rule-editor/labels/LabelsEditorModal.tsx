@@ -1,6 +1,7 @@
+import { t } from '@grafana/i18n';
 import { Modal } from '@grafana/ui';
 
-import { KBObjectArray } from '../../../types/rule-form';
+import { type KBObjectArray } from '../../../types/rule-form';
 
 import { LabelsSubForm } from './LabelsField';
 
@@ -15,7 +16,12 @@ export interface LabelsEditorModalProps {
 }
 export function LabelsEditorModal({ isOpen, onClose, dataSourceName, initialLabels }: LabelsEditorModalProps) {
   return (
-    <Modal title="Edit labels" closeOnEscape isOpen={isOpen} onDismiss={() => onClose()}>
+    <Modal
+      title={t('alerting.labels-editor-modal.title-edit-labels', 'Edit labels')}
+      closeOnEscape
+      isOpen={isOpen}
+      onDismiss={() => onClose()}
+    >
       <LabelsSubForm dataSourceName={dataSourceName} onClose={onClose} initialLabels={initialLabels} />
     </Modal>
   );

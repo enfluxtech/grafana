@@ -4,10 +4,12 @@ const browserslist = require('browserslist');
 const { resolveToEsbuildTarget } = require('esbuild-plugin-browserslist');
 const ESLintPlugin = require('eslint-webpack-plugin');
 const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
+const fs = require('fs');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const path = require('path');
 const { DefinePlugin, EnvironmentPlugin } = require('webpack');
 const WebpackAssetsManifest = require('webpack-assets-manifest');
+const LiveReloadPlugin = require('webpack-livereload-plugin');
 const { merge } = require('webpack-merge');
 const WebpackBar = require('webpackbar');
 
@@ -28,10 +30,25 @@ function getDecoupledPlugins() {
   return packages.filter((pkg) => pkg.dir.includes('plugins/datasource')).map((pkg) => `${pkg.dir}/**`);
 }
 
+// When linking scenes for development, resolve the path to the src directory for sourcemaps
+function scenesModule() {
+  const scenesPath = path.resolve('./node_modules/@grafana/scenes');
+  try {
+    const status = fs.lstatSync(scenesPath);
+    if (status.isSymbolicLink()) {
+      console.log(`scenes is linked to local scenes repo`);
+      return path.resolve(scenesPath + '/src');
+    }
+  } catch (error) {
+    console.error(`Error checking scenes path: ${error.message}`);
+  }
+  return scenesPath;
+}
+
 const envConfig = getEnvConfig();
 
 module.exports = (env = {}) => {
-  return merge(common, {
+  return merge(common(env), {
     devtool: 'source-map',
     mode: 'development',
 
@@ -51,14 +68,10 @@ module.exports = (env = {}) => {
         // Packages linked for development need react to be resolved from the same location
         react: path.resolve('./node_modules/react'),
 
-        // Also Grafana packages need to be resolved from the same location so they share
-        // the same singletons
-        '@grafana/runtime': path.resolve(__dirname, '../../packages/grafana-runtime'),
-        '@grafana/data': path.resolve(__dirname, '../../packages/grafana-data'),
-
         // This is required to correctly resolve react-router-dom when linking with
         //  local version of @grafana/scenes
         'react-router-dom': path.resolve('./node_modules/react-router-dom'),
+        '@grafana/scenes': scenesModule(),
       },
     },
 
@@ -105,13 +118,24 @@ module.exports = (env = {}) => {
     },
 
     plugins: [
+      ...(parseInt(env.liveReload, 10)
+        ? [
+            new LiveReloadPlugin({
+              appendScriptTag: true,
+              useSourceHash: true,
+              hostname: 'localhost',
+              protocol: 'http',
+              port: 35750,
+            }),
+          ]
+        : []),
       parseInt(env.noTsCheck, 10)
         ? new DefinePlugin({}) // bogus plugin to satisfy webpack API
         : new ForkTsCheckerWebpackPlugin({
             async: true, // don't block webpack emit
             typescript: {
               mode: 'write-references',
-              memoryLimit: 5096,
+              memoryLimit: 8192,
               diagnosticOptions: {
                 semantic: true,
                 syntactic: true,
@@ -125,9 +149,10 @@ module.exports = (env = {}) => {
             lintDirtyModulesOnly: true, // don't lint on start, only lint changed files
             extensions: ['.ts', '.tsx'],
             configType: 'flat',
+            failOnError: false,
           }),
       new MiniCssExtractPlugin({
-        filename: 'grafana.[name].[contenthash].css',
+        filename: env.react19 ? 'grafana.[name]-react19.[contenthash].css' : 'grafana.[name].[contenthash].css',
       }),
       new DefinePlugin({
         'process.env': {
@@ -137,7 +162,9 @@ module.exports = (env = {}) => {
       new WebpackAssetsManifest({
         entrypoints: true,
         integrity: true,
+        integrityHashes: ['sha384', 'sha512'],
         publicPath: true,
+        output: env.react19 ? 'assets-manifest-react19.json' : 'assets-manifest.json',
       }),
       new WebpackBar({
         color: '#eb7b18',

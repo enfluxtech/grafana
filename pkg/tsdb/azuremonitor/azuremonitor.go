@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/grafana/grafana-azure-sdk-go/v2/azcredentials"
 	"github.com/grafana/grafana-azure-sdk-go/v2/azsettings"
 	"github.com/grafana/grafana-azure-sdk-go/v2/azusercontext"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -139,6 +140,10 @@ func NewInstanceSettings(clientProvider *httpclient.Provider, executors map[stri
 			return nil, err
 		}
 
+		if credentials.AzureAuthType() == azcredentials.AzureAuthCurrentUserIdentity && !backend.GrafanaConfigFromContext(ctx).FeatureToggles().IsEnabled("azureMonitorEnableUserAuth") {
+			return nil, backend.DownstreamError(errors.New("current user authentication is not enabled for azure monitor"))
+		}
+
 		model := types.DatasourceInfo{
 			Credentials:             credentials,
 			Settings:                azMonitorSettings,
@@ -175,7 +180,7 @@ func (s *Service) getDataSourceFromPluginReq(ctx context.Context, req *backend.Q
 	if !ok {
 		return types.DatasourceInfo{}, fmt.Errorf("unable to convert datasource from service instance")
 	}
-	dsInfo.OrgID = req.PluginContext.OrgID
+	dsInfo.OrgID = req.PluginContext.OrgID // nolint:staticcheck
 
 	dsInfo.DatasourceName = req.PluginContext.DataSourceInstanceSettings.Name
 	dsInfo.DatasourceUID = req.PluginContext.DataSourceInstanceSettings.UID

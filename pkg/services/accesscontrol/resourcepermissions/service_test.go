@@ -14,7 +14,6 @@ import (
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/acimpl"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/actest"
-	"github.com/grafana/grafana/pkg/services/authz/zanzana"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/licensing/licensingtest"
 	"github.com/grafana/grafana/pkg/services/org/orgimpl"
@@ -25,6 +24,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/services/user/userimpl"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/util/testutil"
 )
 
 type setUserPermissionTest struct {
@@ -32,7 +32,9 @@ type setUserPermissionTest struct {
 	callHook bool
 }
 
-func TestService_SetUserPermission(t *testing.T) {
+func TestIntegrationService_SetUserPermission(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []setUserPermissionTest{
 		{
 			desc:     "should call hook when updating user permissions",
@@ -76,7 +78,9 @@ type setTeamPermissionTest struct {
 	callHook bool
 }
 
-func TestService_SetTeamPermission(t *testing.T) {
+func TestIntegrationService_SetTeamPermission(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []setTeamPermissionTest{
 		{
 			desc:     "should call hook when updating user permissions",
@@ -97,7 +101,12 @@ func TestService_SetTeamPermission(t *testing.T) {
 			})
 
 			// seed team
-			team, err := teamSvc.CreateTeam(context.Background(), "test", "test@test.com", 1)
+			teamCmd := team.CreateTeamCommand{
+				Name:  "test",
+				Email: "test@test.com",
+				OrgID: 1,
+			}
+			team, err := teamSvc.CreateTeam(context.Background(), &teamCmd)
 			require.NoError(t, err)
 
 			var hookCalled bool
@@ -120,7 +129,9 @@ type setBuiltInRolePermissionTest struct {
 	callHook bool
 }
 
-func TestService_SetBuiltInRolePermission(t *testing.T) {
+func TestIntegrationService_SetBuiltInRolePermission(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []setBuiltInRolePermissionTest{
 		{
 			desc:     "should call hook when updating user permissions",
@@ -162,7 +173,9 @@ type setPermissionsTest struct {
 	expectErr bool
 }
 
-func TestService_SetPermissions(t *testing.T) {
+func TestIntegrationService_SetPermissions(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []setPermissionsTest{
 		{
 			desc: "should set all permissions",
@@ -212,7 +225,12 @@ func TestService_SetPermissions(t *testing.T) {
 			// seed user
 			_, err := usrSvc.Create(context.Background(), &user.CreateUserCommand{Login: "user", OrgID: 1})
 			require.NoError(t, err)
-			_, err = teamSvc.CreateTeam(context.Background(), "team", "", 1)
+
+			teamCmd := team.CreateTeamCommand{
+				Name:  "test",
+				OrgID: 1,
+			}
+			_, err = teamSvc.CreateTeam(context.Background(), &teamCmd)
 			require.NoError(t, err)
 
 			permissions, err := service.SetPermissions(context.Background(), 1, "1", tt.commands...)
@@ -226,18 +244,18 @@ func TestService_SetPermissions(t *testing.T) {
 	}
 }
 
-func TestService_RegisterActionSets(t *testing.T) {
+func TestIntegrationService_RegisterActionSets(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	type registerActionSetsTest struct {
 		desc               string
-		actionSetsEnabled  bool
 		options            Options
 		expectedActionSets []ActionSet
 	}
 
 	tests := []registerActionSetsTest{
 		{
-			desc:              "should register folder action sets if action sets are enabled",
-			actionSetsEnabled: true,
+			desc: "should register folder action sets if action sets are enabled",
 			options: Options{
 				Resource: "folders",
 				PermissionsToActions: map[string][]string{
@@ -257,8 +275,7 @@ func TestService_RegisterActionSets(t *testing.T) {
 			},
 		},
 		{
-			desc:              "should register dashboard action set if action sets are enabled",
-			actionSetsEnabled: true,
+			desc: "should register dashboard action set if action sets are enabled",
 			options: Options{
 				Resource: "dashboards",
 				PermissionsToActions: map[string][]string{
@@ -272,27 +289,13 @@ func TestService_RegisterActionSets(t *testing.T) {
 				},
 			},
 		},
-		{
-			desc:              "should not register dashboard action set if action sets are not enabled",
-			actionSetsEnabled: false,
-			options: Options{
-				Resource: "dashboards",
-				PermissionsToActions: map[string][]string{
-					"View": {"dashboards:read"},
-				},
-			},
-			expectedActionSets: []ActionSet{},
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			features := featuremgmt.WithFeatures()
-			if tt.actionSetsEnabled {
-				features = featuremgmt.WithFeatures(featuremgmt.FlagAccessActionSets)
-			}
-			ac := acimpl.ProvideAccessControl(features, zanzana.NewNoopClient())
-			actionSets := NewActionSetService(features)
+			ac := acimpl.ProvideAccessControl(features)
+			actionSets := NewActionSetService()
 			_, err := New(
 				setting.NewCfg(), tt.options, features, routing.NewRouteRegister(), licensingtest.NewFakeLicensing(),
 				ac, &actest.FakeService{}, db.InitTestDB(t), nil, nil, actionSets,
@@ -307,7 +310,7 @@ func TestService_RegisterActionSets(t *testing.T) {
 			} else {
 				// Check that action sets have not been registered
 				for permission := range tt.options.PermissionsToActions {
-					actionSetName := GetActionSetName(tt.options.Resource, permission)
+					actionSetName := tt.options.GetActionSetName(permission)
 					assert.Nil(t, actionSets.ResolveActionSet(actionSetName))
 				}
 			}
@@ -318,7 +321,6 @@ func TestService_RegisterActionSets(t *testing.T) {
 func TestStore_RegisterActionSet(t *testing.T) {
 	type actionSetTest struct {
 		desc               string
-		features           featuremgmt.FeatureToggles
 		pluginID           string
 		pluginActions      []plugins.ActionSet
 		coreActionSets     []ActionSet
@@ -328,8 +330,7 @@ func TestStore_RegisterActionSet(t *testing.T) {
 
 	tests := []actionSetTest{
 		{
-			desc:     "should be able to register a plugin action set if the right feature toggles are enabled",
-			features: featuremgmt.WithFeatures(featuremgmt.FlagAccessActionSets, featuremgmt.FlagAccessControlOnCall),
+			desc:     "should be able to register a plugin action set",
 			pluginID: "test-app",
 			pluginActions: []plugins.ActionSet{
 				{
@@ -345,20 +346,7 @@ func TestStore_RegisterActionSet(t *testing.T) {
 			},
 		},
 		{
-			desc:     "should not register plugin action set if feature toggles are missing",
-			features: featuremgmt.WithFeatures(featuremgmt.FlagAccessControlOnCall),
-			pluginID: "test-app",
-			pluginActions: []plugins.ActionSet{
-				{
-					Action:  "folders:view",
-					Actions: []string{"test-app.resource:read"},
-				},
-			},
-			expectedActionSets: []ActionSet{},
-		},
-		{
 			desc:     "should be able to register multiple plugin action sets",
-			features: featuremgmt.WithFeatures(featuremgmt.FlagAccessActionSets, featuremgmt.FlagAccessControlOnCall),
 			pluginID: "test-app",
 			pluginActions: []plugins.ActionSet{
 				{
@@ -383,7 +371,6 @@ func TestStore_RegisterActionSet(t *testing.T) {
 		},
 		{
 			desc:     "action set actions should be added not replaced",
-			features: featuremgmt.WithFeatures(featuremgmt.FlagAccessActionSets, featuremgmt.FlagAccessControlOnCall),
 			pluginID: "test-app",
 			pluginActions: []plugins.ActionSet{
 				{
@@ -426,7 +413,6 @@ func TestStore_RegisterActionSet(t *testing.T) {
 		},
 		{
 			desc:     "should not be able to register an action that doesn't have a plugin prefix",
-			features: featuremgmt.WithFeatures(featuremgmt.FlagAccessActionSets, featuremgmt.FlagAccessControlOnCall),
 			pluginID: "test-app",
 			pluginActions: []plugins.ActionSet{
 				{
@@ -442,7 +428,6 @@ func TestStore_RegisterActionSet(t *testing.T) {
 		},
 		{
 			desc:     "should not be able to register action set that is not in the allow list",
-			features: featuremgmt.WithFeatures(featuremgmt.FlagAccessActionSets, featuremgmt.FlagAccessControlOnCall),
 			pluginID: "test-app",
 			pluginActions: []plugins.ActionSet{
 				{
@@ -452,10 +437,42 @@ func TestStore_RegisterActionSet(t *testing.T) {
 			},
 			expectedErr: true,
 		},
+		{
+			desc:     "should support routes",
+			pluginID: "test-app",
+			coreActionSets: []ActionSet{
+				{
+					Action:  accesscontrol.AlertingRoutesKind + ":view",
+					Actions: []string{accesscontrol.ActionAlertingManagedRoutesRead},
+				},
+				{
+					Action: accesscontrol.AlertingRoutesKind + ":edit",
+					Actions: []string{
+						accesscontrol.ActionAlertingManagedRoutesRead,
+						accesscontrol.ActionAlertingManagedRoutesWrite,
+						accesscontrol.ActionAlertingManagedRoutesDelete,
+					},
+				},
+			},
+			expectedActionSets: []ActionSet{
+				{
+					Action:  accesscontrol.AlertingRoutesKind + ":view",
+					Actions: []string{accesscontrol.ActionAlertingManagedRoutesRead},
+				},
+				{
+					Action: accesscontrol.AlertingRoutesKind + ":edit",
+					Actions: []string{
+						accesscontrol.ActionAlertingManagedRoutesRead,
+						accesscontrol.ActionAlertingManagedRoutesWrite,
+						accesscontrol.ActionAlertingManagedRoutesDelete,
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			asService := NewActionSetService(tt.features)
+			asService := NewActionSetService()
 
 			err := asService.RegisterActionSets(context.Background(), tt.pluginID, tt.pluginActions)
 			if tt.expectedErr {
@@ -486,6 +503,150 @@ func TestStore_RegisterActionSet(t *testing.T) {
 	}
 }
 
+func TestService_K8sActionFormat(t *testing.T) {
+	tests := []struct {
+		name                  string
+		opts                  Options
+		expectErr             bool
+		expectedAction        string
+		expectedScope         string
+		expectedRoleName      string
+		expectedActionSetName string
+	}{
+		{
+			name: "legacy format",
+			opts: Options{
+				Resource:        "dashboards",
+				APIGroup:        "",
+				K8sActionFormat: false,
+			},
+			expectErr:             false,
+			expectedAction:        "dashboards.permissions:read",
+			expectedScope:         "dashboards:uid:abc123",
+			expectedRoleName:      "fixed:dashboards.permissions:reader",
+			expectedActionSetName: "dashboards:view",
+		},
+		{
+			name: "k8s format",
+			opts: Options{
+				Resource:        "dashboards",
+				APIGroup:        "dashboard.grafana.app",
+				K8sActionFormat: true,
+			},
+			expectErr:             false,
+			expectedAction:        "dashboard.grafana.app/dashboards:get_permissions",
+			expectedScope:         "dashboard.grafana.app/dashboards:uid:abc123",
+			expectedRoleName:      "fixed:dashboard.grafana.app:dashboards.permissions:reader",
+			expectedActionSetName: "dashboard.grafana.app/dashboards:view",
+		},
+		{
+			name: "k8s format without api group should fail",
+			opts: Options{
+				Resource:        "dashboards",
+				APIGroup:        "",
+				K8sActionFormat: true,
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sql := db.InitTestDB(t)
+			cfg := setting.NewCfg()
+			license := licensingtest.NewFakeLicensing()
+			license.On("FeatureEnabled", "accesscontrol.enforcement").Return(true).Maybe()
+			acService := &actest.FakeService{}
+			features := featuremgmt.WithFeatures()
+			ac := acimpl.ProvideAccessControl(features)
+
+			service, err := New(
+				cfg, tt.opts, features, routing.NewRouteRegister(), license,
+				ac, acService, sql, nil, nil, NewActionSetService(),
+			)
+
+			if tt.expectErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			// Test Options.GetAction
+			action := service.options.GetAction("read")
+			assert.Equal(t, tt.expectedAction, action)
+
+			// Test Options.GetScope
+			scope := service.options.GetScope("uid", "abc123")
+			assert.Equal(t, tt.expectedScope, scope)
+
+			// Test Options.GetRoleName
+			roleName := service.options.GetRoleName("reader")
+			assert.Equal(t, tt.expectedRoleName, roleName)
+
+			// Test Options.GetActionSetName
+			actionSetName := service.options.GetActionSetName("View")
+			assert.Equal(t, tt.expectedActionSetName, actionSetName)
+		})
+	}
+}
+
+func TestGetActionSetName(t *testing.T) {
+	tests := []struct {
+		name       string
+		k8sFormat  bool
+		apiGroup   string
+		resource   string
+		permission string
+		expected   string
+	}{
+		{
+			name:       "legacy format",
+			k8sFormat:  false,
+			apiGroup:   "",
+			resource:   "dashboards",
+			permission: "View",
+			expected:   "dashboards:view",
+		},
+		{
+			name:       "k8s format",
+			k8sFormat:  true,
+			apiGroup:   "dashboard.grafana.app",
+			resource:   "dashboards",
+			permission: "View",
+			expected:   "dashboard.grafana.app/dashboards:view",
+		},
+		{
+			name:       "legacy format lowercase",
+			k8sFormat:  false,
+			apiGroup:   "",
+			resource:   "Dashboards",
+			permission: "View",
+			expected:   "dashboards:view",
+		},
+		{
+			name:       "k8s format lowercase",
+			k8sFormat:  true,
+			apiGroup:   "Dashboard.Grafana.App",
+			resource:   "Dashboards",
+			permission: "View",
+			expected:   "dashboard.grafana.app/dashboards:view",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := Options{
+				Resource:        tt.resource,
+				APIGroup:        tt.apiGroup,
+				K8sActionFormat: tt.k8sFormat,
+			}
+			result := opts.GetActionSetName(tt.permission)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func setupTestEnvironment(t *testing.T, ops Options) (*Service, user.Service, team.Service) {
 	t.Helper()
 
@@ -493,7 +654,7 @@ func setupTestEnvironment(t *testing.T, ops Options) (*Service, user.Service, te
 	cfg := setting.NewCfg()
 	tracer := tracing.InitializeTracerForTest()
 
-	teamSvc, err := teamimpl.ProvideService(sql, cfg, tracer)
+	teamSvc, err := teamimpl.ProvideService(sql, cfg, tracer, nil)
 	require.NoError(t, err)
 
 	orgSvc, err := orgimpl.ProvideService(sql, cfg, quotatest.New(false, nil))
@@ -501,7 +662,7 @@ func setupTestEnvironment(t *testing.T, ops Options) (*Service, user.Service, te
 
 	userSvc, err := userimpl.ProvideService(
 		sql, orgSvc, cfg, teamSvc, nil, tracer,
-		quotatest.New(false, nil), supportbundlestest.NewFakeBundleService(),
+		quotatest.New(false, nil), supportbundlestest.NewFakeBundleService(), nil,
 	)
 	require.NoError(t, err)
 
@@ -509,10 +670,10 @@ func setupTestEnvironment(t *testing.T, ops Options) (*Service, user.Service, te
 	license.On("FeatureEnabled", "accesscontrol.enforcement").Return(true).Maybe()
 	acService := &actest.FakeService{}
 	features := featuremgmt.WithFeatures()
-	ac := acimpl.ProvideAccessControl(features, zanzana.NewNoopClient())
+	ac := acimpl.ProvideAccessControl(features)
 	service, err := New(
 		cfg, ops, features, routing.NewRouteRegister(), license,
-		ac, acService, sql, teamSvc, userSvc, NewActionSetService(features),
+		ac, acService, sql, teamSvc, userSvc, NewActionSetService(),
 	)
 	require.NoError(t, err)
 

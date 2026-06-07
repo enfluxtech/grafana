@@ -1,6 +1,6 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import { NavModelItem } from '@grafana/data';
+import { type NavModelItem } from '@grafana/data';
 import { config } from '@grafana/runtime';
 
 import { getNavSubTitle, getNavTitle } from '../utils/navBarItem-translations';
@@ -52,9 +52,6 @@ const navTreeSlice = createSlice({
       }
     },
     setBookmark: (state, action: PayloadAction<{ item: NavModelItem; isSaved: boolean }>) => {
-      if (!config.featureToggles.pinNavItems) {
-        return;
-      }
       const bookmarks = state.find((navItem) => navItem.id === 'bookmarks');
       const { item, isSaved } = action.payload;
       if (bookmarks) {

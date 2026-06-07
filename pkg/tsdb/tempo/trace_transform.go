@@ -14,6 +14,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
+// serviceNamespaceAltKey is an alternative to the OTel semconv canonical service.namespace (e.g. used by some SDKs).
+const serviceNamespaceAltKey = "service.namespace.name"
+
 type KeyValue struct {
 	Value any    `json:"value"`
 	Key   string `json:"key"`
@@ -48,6 +51,7 @@ func TraceToFrame(resourceSpans []*tracev11.ResourceSpans) (*data.Frame, error) 
 			data.NewField("parentSpanID", nil, []string{}),
 			data.NewField("operationName", nil, []string{}),
 			data.NewField("serviceName", nil, []string{}),
+			data.NewField("serviceNamespace", nil, []string{}),
 			data.NewField("kind", nil, []string{}),
 			data.NewField("statusCode", nil, []int64{}),
 			data.NewField("statusMessage", nil, []string{}),
@@ -128,7 +132,7 @@ func spanToSpanRow(span *tracev11.Span, libraryTags *commonv11.InstrumentationSc
 	parentSpanIDHex := hex.EncodeToString(parentSpanID[:])
 
 	startTime := float64(span.StartTimeUnixNano) / 1_000_000
-	serviceName, serviceTags := resourceToProcess(resource)
+	serviceName, serviceNamespace, serviceTags := resourceToProcess(resource)
 
 	status := span.Status
 	statusCode := int64(status.Code)
@@ -143,7 +147,12 @@ func spanToSpanRow(span *tracev11.Span, libraryTags *commonv11.InstrumentationSc
 		return nil, fmt.Errorf("failed to marshal service tags: %w", err)
 	}
 
-	spanTags, err := json.Marshal(getSpanTags(span))
+	// Get both span tags and scope tags and combine them
+	spanTagsList := getSpanTags(span)
+	scopeTagsList := getScopeTags(libraryTags)
+	spanTagsList = append(spanTagsList, scopeTagsList...)
+
+	spanTags, err := json.Marshal(spanTagsList)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal span tags: %w", err)
 	}
@@ -166,6 +175,7 @@ func spanToSpanRow(span *tracev11.Span, libraryTags *commonv11.InstrumentationSc
 		parentSpanIDHex,
 		span.Name,
 		serviceName,
+		serviceNamespace,
 		getSpanKind(span.Kind),
 		statusCode,
 		statusMessage,
@@ -181,17 +191,24 @@ func spanToSpanRow(span *tracev11.Span, libraryTags *commonv11.InstrumentationSc
 	}, nil
 }
 
-func resourceToProcess(resource *v1.Resource) (string, []*KeyValue) {
+func resourceToProcess(resource *v1.Resource) (string, string, []*KeyValue) {
 	attrs := resource.Attributes
 	serviceName := ResourceNoServiceName
+	var serviceNamespace, serviceNamespaceAlt string
 	if len(attrs) == 0 {
-		return serviceName, nil
+		return serviceName, serviceNamespace, nil
 	}
 
 	tags := make([]*KeyValue, 0, len(attrs)-1)
 	for _, attr := range attrs {
 		if attribute.Key(attr.Key) == semconv.ServiceNameKey {
 			serviceName = attr.GetValue().GetStringValue()
+		}
+		if attribute.Key(attr.Key) == semconv.ServiceNamespaceKey {
+			serviceNamespace = attr.GetValue().GetStringValue()
+		}
+		if attribute.Key(attr.Key) == attribute.Key(serviceNamespaceAltKey) {
+			serviceNamespaceAlt = attr.GetValue().GetStringValue()
 		}
 		val, err := getAttributeVal(attr.Value)
 		if err != nil {
@@ -200,7 +217,11 @@ func resourceToProcess(resource *v1.Resource) (string, []*KeyValue) {
 		tags = append(tags, &KeyValue{Key: attr.Key, Value: val})
 	}
 
-	return serviceName, tags
+	// Coalesce: prefer OTel semconv canonical service.namespace, fallback to service.namespace.name
+	if serviceNamespace == "" && serviceNamespaceAlt != "" {
+		serviceNamespace = serviceNamespaceAlt
+	}
+	return serviceName, serviceNamespace, tags
 }
 
 func getAttributeVal(attr *commonv11.AnyValue) (any, error) {
@@ -264,6 +285,22 @@ func getSpanTags(span *tracev11.Span) []*KeyValue {
 		val, err := getAttributeVal(attr.Value)
 		if err != nil {
 			logger.Debug("error transforming span tags", "err", err)
+		}
+		tags[i] = &KeyValue{Key: attr.Key, Value: val}
+	}
+	return tags
+}
+
+func getScopeTags(scope *commonv11.InstrumentationScope) []*KeyValue {
+	if scope == nil || len(scope.Attributes) == 0 {
+		return nil
+	}
+
+	tags := make([]*KeyValue, len(scope.Attributes))
+	for i, attr := range scope.Attributes {
+		val, err := getAttributeVal(attr.Value)
+		if err != nil {
+			logger.Debug("error transforming scope attributes", "err", err)
 		}
 		tags[i] = &KeyValue{Key: attr.Key, Value: val}
 	}

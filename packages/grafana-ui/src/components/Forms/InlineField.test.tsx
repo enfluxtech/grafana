@@ -1,9 +1,10 @@
 import { render, screen } from '@testing-library/react';
 
+import { Combobox } from '../Combobox/Combobox';
 import { Input } from '../Input/Input';
-import { Select } from '../Select/Select';
 
 import { InlineField } from './InlineField';
+import { RadioButtonGroup } from './RadioButtonGroup/RadioButtonGroup';
 
 describe('InlineField', () => {
   it('renders the label', () => {
@@ -27,12 +28,43 @@ describe('InlineField', () => {
   });
 
   it('renders with the inputId of its children', () => {
+    const comboboxOptions = [
+      { label: 'Option 1', value: '1' },
+      { label: 'Option 2', value: '2' },
+    ];
     render(
       <InlineField label="My other label">
-        <Select inputId="my-select-input" onChange={() => {}} />
+        <Combobox id="my-select-input" options={comboboxOptions} onChange={() => {}} />
       </InlineField>
     );
 
     expect(screen.getByLabelText('My other label')).toBeInTheDocument();
+  });
+
+  describe('fieldset rendering for RadioButtonGroup', () => {
+    const radioOptions = [
+      { label: 'Light', value: 'light' },
+      { label: 'Dark', value: 'dark' },
+    ];
+
+    it('renders the radiogroup with an accessible name via aria-labelledby', () => {
+      render(
+        <InlineField label="Theme">
+          <RadioButtonGroup options={radioOptions} />
+        </InlineField>
+      );
+
+      expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeInTheDocument();
+    });
+
+    it('renders required indicator in the label', () => {
+      render(
+        <InlineField label="Theme" required>
+          <RadioButtonGroup options={radioOptions} />
+        </InlineField>
+      );
+
+      expect(screen.getByRole('radiogroup', { name: 'Theme *' })).toBeInTheDocument();
+    });
   });
 });

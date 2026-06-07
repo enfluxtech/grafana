@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { Routes, Route } from 'react-router-dom-v5-compat';
-import { Props } from 'react-virtualized-auto-sizer';
-import { render, waitFor, waitForElementToBeRemoved, userEvent } from 'test/test-utils';
+import { Route, Routes } from 'react-router-dom-v5-compat';
+import { type Props } from 'react-virtualized-auto-sizer';
+import { render, userEvent, waitFor, waitForElementToBeRemoved } from 'test/test-utils';
 import { byRole, byTestId, byText } from 'testing-library-selector';
 
 import { mockExportApi, setupMswServer } from '../../mockApi';
 import { mockDataSource } from '../../mocks';
-import { grafanaRulerRule } from '../../mocks/grafanaRulerApi';
+import { grafanaRulerRule, mockPreviewApiResponse } from '../../mocks/grafanaRulerApi';
 import { setupDataSources } from '../../testSetup/datasources';
 
 import GrafanaModifyExport from './GrafanaModifyExport';
@@ -58,6 +58,10 @@ function renderModifyExport(ruleId: string) {
 }
 
 const server = setupMswServer();
+
+beforeEach(() => {
+  mockPreviewApiResponse(server, []);
+});
 
 describe('GrafanaModifyExport', () => {
   setupDataSources(dataSources.default);

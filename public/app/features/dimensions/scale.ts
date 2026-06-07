@@ -1,8 +1,7 @@
-import { DataFrame, Field } from '@grafana/data';
-import { getMinMaxAndDelta } from '@grafana/data/src/field/scale';
-import { ScaleDimensionConfig, ScaleDimensionMode } from '@grafana/schema';
+import { getMinMaxAndDelta, type DataFrame, type Field } from '@grafana/data';
+import { type ScaleDimensionConfig, ScaleDimensionMode } from '@grafana/schema';
 
-import { DimensionSupplier, ScaleDimensionOptions } from './types';
+import { type DimensionSupplier, type ScaleDimensionOptions } from './types';
 import { findField, getLastNotNullFieldValue } from './utils';
 
 //---------------------------------------------------------

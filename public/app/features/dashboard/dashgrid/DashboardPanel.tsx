@@ -1,14 +1,14 @@
 import { PureComponent } from 'react';
-import { connect, ConnectedProps } from 'react-redux';
+import { connect, type ConnectedProps } from 'react-redux';
 
-import { StoreState } from 'app/types';
+import { type StoreState } from 'app/types/store';
 
 import { initPanelState } from '../../panel/state/actions';
 import { setPanelInstanceState } from '../../panel/state/reducers';
-import { DashboardModel, PanelModel } from '../state';
+import { type DashboardModel } from '../state/DashboardModel';
+import { type PanelModel } from '../state/PanelModel';
 
 import { LazyLoader } from './LazyLoader';
-import { PanelChromeAngular } from './PanelChromeAngular';
 import { PanelStateWrapper } from './PanelStateWrapper';
 
 export interface OwnProps {
@@ -88,22 +88,6 @@ export class DashboardPanelUnconnected extends PureComponent<Props> {
 
     if (!plugin) {
       return null;
-    }
-
-    if (plugin && plugin.angularPanelCtrl) {
-      return (
-        <PanelChromeAngular
-          plugin={plugin}
-          panel={panel}
-          dashboard={dashboard}
-          isViewing={isViewing}
-          isEditing={isEditing}
-          isInView={isInView}
-          isDraggable={isDraggable}
-          width={width}
-          height={height}
-        />
-      );
     }
 
     return (

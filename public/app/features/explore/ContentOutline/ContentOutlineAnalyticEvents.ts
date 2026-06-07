@@ -1,4 +1,4 @@
-import { LogLevel } from '@grafana/data';
+import { type LogLevel } from '@grafana/data';
 import { reportInteraction } from '@grafana/runtime';
 
 export function contentOutlineTrackPinAdded() {
@@ -36,9 +36,9 @@ export function contentOutlineTrackUnpinClicked() {
   });
 }
 
-export function contentOutlineTrackLevelFilter(level: { levelStr: string; logLevel: LogLevel }) {
+export function contentOutlineTrackLevelFilter(level: LogLevel) {
   reportInteraction('explore_toolbar_contentoutline_clicked', {
     item: 'section',
-    type: `Logs:filter:${level.levelStr}`,
+    type: `Logs:filter:${level}`,
   });
 }

@@ -1,14 +1,15 @@
-import { SyntheticEvent, useId } from 'react';
+import { type SyntheticEvent, useId } from 'react';
 
-import { DataSourceSettings, SelectableValue } from '@grafana/data';
+import { type DataSourceSettings, type SelectableValue } from '@grafana/data';
 import { Select, Input, Field, FieldSet } from '@grafana/ui';
 
-import { OpenTsdbOptions } from '../types';
+import { type OpenTsdbOptions } from '../types';
 
 const tsdbVersions = [
   { label: '<=2.1', value: 1 },
   { label: '==2.2', value: 2 },
   { label: '==2.3', value: 3 },
+  { label: '==2.4', value: 4 },
 ];
 
 const tsdbResolutions = [

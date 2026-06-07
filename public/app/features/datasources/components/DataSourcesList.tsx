@@ -1,16 +1,20 @@
 import { css } from '@emotion/css';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom-v5-compat';
 
-import { DataSourceSettings, GrafanaTheme2 } from '@grafana/data';
-import { config } from '@grafana/runtime';
+import { type DataSourceSettings, type GrafanaTheme2 } from '@grafana/data';
+import { Trans, t } from '@grafana/i18n';
+import { config, useFavoriteDatasources, type FavoriteDatasources } from '@grafana/runtime';
 import { EmptyState, LinkButton, TextLink, useStyles2 } from '@grafana/ui';
-import { contextSrv } from 'app/core/core';
-import { Trans, t } from 'app/core/internationalization';
-import { StoreState, AccessControlAction, useSelector } from 'app/types';
+import { useQueryParams } from 'app/core/hooks/useQueryParams';
+import { contextSrv } from 'app/core/services/context_srv';
+import { AccessControlAction } from 'app/types/accessControl';
+import { type StoreState, useSelector } from 'app/types/store';
 
 import { ROUTES } from '../../connections/constants';
-import { getDataSources, getDataSourcesCount, useLoadDataSources } from '../state';
+import { useDatasourceFailureByUID } from '../../connections/hooks/useDatasourceAdvisorChecks';
+import { useLoadDataSources } from '../state/hooks';
+import { getDataSources, getDataSourcesCount } from '../state/selectors';
 import { trackDataSourcesListViewed } from '../tracking';
 
 import { DataSourcesListCard } from './DataSourcesListCard';
@@ -18,6 +22,12 @@ import { DataSourcesListHeader } from './DataSourcesListHeader';
 
 export function DataSourcesList() {
   const { isLoading } = useLoadDataSources();
+  const favoriteDataSources = useFavoriteDatasources();
+  const [queryParams, updateQueryParams] = useQueryParams();
+  const showFavoritesOnly = !!queryParams.starred;
+  const handleFavoritesCheckboxChange = (value: boolean) => {
+    updateQueryParams({ starred: value ? 'true' : undefined });
+  };
 
   const dataSources = useSelector((state) => getDataSources(state.dataSources));
   const dataSourcesCount = useSelector(({ dataSources }: StoreState) => getDataSourcesCount(dataSources));
@@ -33,6 +43,9 @@ export function DataSourcesList() {
       hasCreateRights={hasCreateRights}
       hasWriteRights={hasWriteRights}
       hasExploreRights={hasExploreRights}
+      showFavoritesOnly={showFavoritesOnly}
+      handleFavoritesCheckboxChange={handleFavoritesCheckboxChange}
+      favoriteDataSources={favoriteDataSources}
     />
   );
 }
@@ -44,18 +57,41 @@ export type ViewProps = {
   hasCreateRights: boolean;
   hasWriteRights: boolean;
   hasExploreRights: boolean;
+  showFavoritesOnly?: boolean;
+  handleFavoritesCheckboxChange?: (value: boolean) => void;
+  favoriteDataSources?: FavoriteDatasources;
 };
 
 export function DataSourcesListView({
-  dataSources,
+  dataSources: allDataSources,
   dataSourcesCount,
   isLoading,
   hasCreateRights,
   hasWriteRights,
   hasExploreRights,
+  showFavoritesOnly,
+  handleFavoritesCheckboxChange,
+  favoriteDataSources,
 }: ViewProps) {
   const styles = useStyles2(getStyles);
   const location = useLocation();
+  const { datasourceFailureByUID } = useDatasourceFailureByUID();
+  const favoritesCheckbox =
+    favoriteDataSources?.enabled && handleFavoritesCheckboxChange && showFavoritesOnly !== undefined
+      ? {
+          onChange: handleFavoritesCheckboxChange,
+          value: showFavoritesOnly,
+          label: t('datasources.list.starred', 'Starred'),
+        }
+      : undefined;
+
+  // Filter data sources based on favorites when enabled
+  const dataSources = useMemo(() => {
+    if (!showFavoritesOnly || !favoriteDataSources?.enabled) {
+      return allDataSources;
+    }
+    return allDataSources.filter((dataSource) => favoriteDataSources?.isFavoriteDatasource(dataSource.uid));
+  }, [allDataSources, showFavoritesOnly, favoriteDataSources]);
 
   useEffect(() => {
     trackDataSourcesListViewed({
@@ -95,21 +131,26 @@ export function DataSourcesListView({
         .map((_, index) => <DataSourcesListCard.Skeleton key={index} hasExploreRights={hasExploreRights} />);
     }
 
-    return dataSources.map((dataSource) => (
-      <li key={dataSource.uid}>
-        <DataSourcesListCard
-          dataSource={dataSource}
-          hasWriteRights={hasWriteRights}
-          hasExploreRights={hasExploreRights}
-        />
-      </li>
-    ));
+    return dataSources.map((dataSource) => {
+      const failure = datasourceFailureByUID.get(dataSource.uid);
+
+      return (
+        <li key={dataSource.uid}>
+          <DataSourcesListCard
+            dataSource={dataSource}
+            hasWriteRights={hasWriteRights}
+            hasExploreRights={hasExploreRights}
+            failure={failure}
+          />
+        </li>
+      );
+    });
   };
 
   return (
     <>
       {/* List Header */}
-      <DataSourcesListHeader />
+      <DataSourcesListHeader filterCheckbox={favoritesCheckbox} />
 
       {/* List */}
       {dataSources.length === 0 && !isLoading ? (
@@ -126,7 +167,7 @@ const getStyles = (theme: GrafanaTheme2) => {
     list: css({
       listStyle: 'none',
       display: 'grid',
-      // gap: '8px', Add back when legacy support for old Card interface is dropped
+      gap: theme.spacing(1),
     }),
   };
 };

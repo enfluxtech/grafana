@@ -7,11 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/grafana/pkg/services/apiserver/endpoints/request"
-	"github.com/grafana/grafana/pkg/services/playlist"
 )
 
 func TestPlaylistConversion(t *testing.T) {
-	src := &playlist.PlaylistDTO{
+	src := &PlaylistDTO{
 		Id:        123,
 		OrgID:     3,
 		Uid:       "abc",         // becomes k8s name
@@ -19,7 +18,7 @@ func TestPlaylistConversion(t *testing.T) {
 		Interval:  "10s",
 		CreatedAt: 12345,
 		UpdatedAt: 54321,
-		Items: []playlist.PlaylistItemDTO{
+		Items: []PlaylistItemDTO{
 			{Type: "dashboard_by_uid", Value: "UID0"},
 			{Type: "dashboard_by_tag", Value: "tagA"},
 			{Type: "dashboard_by_id", Value: "123"}, // deprecated
@@ -33,39 +32,41 @@ func TestPlaylistConversion(t *testing.T) {
 
 	out, err := json.MarshalIndent(dst, "", "  ")
 	require.NoError(t, err)
-	// fmt.Printf("%s", string(out))
+	// t.Logf("%s", string(out))
 	require.JSONEq(t, `{
+		"apiVersion": "playlist.grafana.app/v1", 
+		"kind": "Playlist",
 		"metadata": {
-		  "name": "abc",
-		  "namespace": "org-3",
-		  "uid": "f0zxjm7ApxOafsn6DLQZ4Ezp78WRUsZqSc4taOSHq1gX",
-		  "resourceVersion": "54321",
-		  "creationTimestamp": "1970-01-01T00:00:12Z",
-		  "annotations": {
-			"grafana.app/repoPath": "123",
-			"grafana.app/repoName": "SQL",
-			"grafana.app/repoTimestamp":"1970-01-01T00:00:12Z",
-			"grafana.app/updatedTimestamp": "1970-01-01T00:00:54Z"
-		  }
+			"name": "abc",
+			"namespace": "org-3",
+			"uid": "f0zxjm7ApxOafsn6DLQZ4Ezp78WRUsZqSc4taOSHq1gX",
+			"resourceVersion": "54321",
+			"creationTimestamp": "1970-01-01T00:00:12Z",
+			"labels": {
+				"grafana.app/deprecatedInternalID": "123"
+			},
+			"annotations": {
+				"grafana.app/updatedTimestamp": "1970-01-01T00:00:54Z"
+			}
 		},
 		"spec": {
-		  "title": "MyPlaylists",
-		  "interval": "10s",
-		  "items": [
-			{
-			  "type": "dashboard_by_uid",
-			  "value": "UID0"
-			},
-			{
-			  "type": "dashboard_by_tag",
-			  "value": "tagA"
-			},
-			{
-			  "type": "dashboard_by_id",
-			  "value": "123"
-			}
-		  ]
+			"title": "MyPlaylists",
+			"interval": "10s",
+			"items": [
+				{
+					"type": "dashboard_by_uid",
+					"value": "UID0"
+				},
+				{
+					"type": "dashboard_by_tag",
+					"value": "tagA"
+				},
+				{
+					"type": "dashboard_by_id",
+					"value": "123"
+				}
+			]
 		},
 		"status": {}
-	  }`, string(out))
+	}`, string(out))
 }

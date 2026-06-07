@@ -1,21 +1,23 @@
 import { css } from '@emotion/css';
-import { useEffect, useMemo, useRef, useCallback, useState, CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useCallback, useState, type CSSProperties } from 'react';
 import * as React from 'react';
-import { useTable, Column, TableOptions, Cell } from 'react-table';
+import { useTable, type Column, type TableOptions, type Cell } from 'react-table';
 import { FixedSizeList } from 'react-window';
 import InfiniteLoader from 'react-window-infinite-loader';
-import { Observable } from 'rxjs';
+import { type Observable } from 'rxjs';
 
-import { Field, GrafanaTheme2 } from '@grafana/data';
+import { type Field, type GrafanaTheme2 } from '@grafana/data';
+import { Trans, t } from '@grafana/i18n';
+import { reportInteraction } from '@grafana/runtime';
+import { usePanelPluginMetasMap } from '@grafana/runtime/internal';
 import { TableCellHeight } from '@grafana/schema';
 import { useStyles2, useTheme2 } from '@grafana/ui';
-import { TableCell } from '@grafana/ui/src/components/Table/TableCell';
-import { useTableStyles } from '@grafana/ui/src/components/Table/styles';
+import { useTableStyles, TableCell } from '@grafana/ui/internal';
 import { useCustomFlexLayout } from 'app/features/browse-dashboards/components/customFlexTableLayout';
 
 import { useSearchKeyboardNavigation } from '../../hooks/useSearchKeyboardSelection';
-import { QueryResponse } from '../../service';
-import { SelectionChecker, SelectionToggle } from '../selection';
+import { type QueryResponse } from '../../service/types';
+import { type SelectionChecker, type SelectionToggle } from '../selection';
 
 import { generateColumns } from './columns';
 
@@ -30,6 +32,7 @@ export type SearchResultsProps = {
   onDatasourceChange?: (datasource?: string) => void;
   onClickItem?: (event: React.MouseEvent<HTMLElement>) => void;
   keyboardEvents: Observable<React.KeyboardEvent>;
+  trackingSource?: string;
 };
 
 export type TableColumn = Column & {
@@ -37,6 +40,7 @@ export type TableColumn = Column & {
 };
 
 const ROW_HEIGHT = 36; // pixels
+const EMPTY_PANEL_PLUGIN_METAS = {};
 
 export const SearchResultsTable = React.memo(
   ({
@@ -50,6 +54,7 @@ export const SearchResultsTable = React.memo(
     onDatasourceChange,
     onClickItem,
     keyboardEvents,
+    trackingSource,
   }: SearchResultsProps) => {
     const styles = useStyles2(getStyles);
     const columnStyles = useStyles2(getColumnStyles);
@@ -57,6 +62,7 @@ export const SearchResultsTable = React.memo(
     const infiniteLoaderRef = useRef<InfiniteLoader>(null);
     const [listEl, setListEl] = useState<FixedSizeList | null>(null);
     const highlightIndex = useSearchKeyboardNavigation(keyboardEvents, 0, response);
+    const { value: panelPluginMetas = EMPTY_PANEL_PLUGIN_METAS } = usePanelPluginMetasMap();
 
     const memoizedData = useMemo(() => {
       if (!response?.view?.dataFrame.fields.length) {
@@ -90,9 +96,20 @@ export const SearchResultsTable = React.memo(
         columnStyles,
         onTagSelected,
         onDatasourceChange,
-        response.view?.length >= response.totalRows
+        response.view?.length >= response.totalRows,
+        panelPluginMetas
       );
-    }, [response, width, columnStyles, selection, selectionToggle, clearSelection, onTagSelected, onDatasourceChange]);
+    }, [
+      response,
+      width,
+      columnStyles,
+      selection,
+      selectionToggle,
+      clearSelection,
+      onTagSelected,
+      onDatasourceChange,
+      panelPluginMetas,
+    ]);
 
     const options: TableOptions<{}> = useMemo(
       () => ({
@@ -141,6 +158,35 @@ export const SearchResultsTable = React.memo(
         return (
           <div key={key} {...rowProps} className={className}>
             {row.cells.map((cell: Cell, index: number) => {
+              const href = onClickItem ? url : undefined;
+
+              let userProps = {
+                href,
+                onClick: onClickItem,
+              };
+
+              if (cell.column.id === 'column-name' && href) {
+                const item = response.view.get(rowIndex);
+                const itemKind = item.kind;
+                const parent = item.location || 'general';
+                const parentType = parent === 'general' ? 'general' : 'folder';
+
+                userProps.onClick = (evt: React.MouseEvent<HTMLElement>) => {
+                  try {
+                    reportInteraction('grafana_browse_dashboards_page_click_list_item', {
+                      itemKind: itemKind,
+                      parent: parentType,
+                      source: trackingSource,
+                    });
+                  } catch (e) {
+                    // ignore analytics errors
+                  }
+                  if (onClickItem) {
+                    onClickItem(evt);
+                  }
+                };
+              }
+
               return (
                 <TableCell
                   key={index}
@@ -148,7 +194,7 @@ export const SearchResultsTable = React.memo(
                   cell={cell}
                   columnIndex={index}
                   columnCount={row.cells.length}
-                  userProps={{ href: url, onClick: onClickItem }}
+                  userProps={userProps}
                   frame={response.view.dataFrame}
                 />
               );
@@ -156,24 +202,23 @@ export const SearchResultsTable = React.memo(
           </div>
         );
       },
-      [
-        rows,
-        prepareRow,
-        response.view.fields.url?.values,
-        highlightIndex,
-        styles,
-        tableStyles,
-        onClickItem,
-        response.view.dataFrame,
-      ]
+      [rows, prepareRow, highlightIndex, styles, tableStyles, onClickItem, response.view, trackingSource]
     );
 
     if (!rows.length) {
-      return <div className={styles.noData}>No data</div>;
+      return (
+        <div className={styles.noData}>
+          <Trans i18nKey="search.search-results-table.no-data">No values</Trans>
+        </div>
+      );
     }
 
     return (
-      <div {...getTableProps()} aria-label="Search results table" role="table">
+      <div
+        {...getTableProps()}
+        aria-label={t('search.search-results-table.aria-label-search-results-table', 'Search results table')}
+        role="table"
+      >
         {headerGroups.map((headerGroup) => {
           const { key, ...headerGroupProps } = headerGroup.getHeaderGroupProps({
             style: { width },
@@ -309,7 +354,8 @@ const getColumnStyles = (theme: GrafanaTheme2) => {
       display: 'flex',
       flexWrap: 'nowrap',
       gap: theme.spacing(1),
-      overflow: 'hidden',
+      // No overflow:hidden here — it would clip the focus ring (box-shadow) from child <a> elements.
+      // The parent cell already clips the container width. Each locationItem handles its own truncation.
     }),
     locationItem: css({
       alignItems: 'center',

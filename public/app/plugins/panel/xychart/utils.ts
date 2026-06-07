@@ -1,23 +1,23 @@
 import {
-  Field,
+  type Field,
   formattedValueToString,
   getFieldMatcher,
   FieldType,
   getFieldDisplayName,
-  DataFrame,
+  type DataFrame,
   FrameMatcherID,
-  MatcherConfig,
+  type MatcherConfig,
   FieldColorModeId,
   cacheFieldDisplayNames,
   FieldMatcherID,
-  FieldConfigSource,
+  type FieldConfigSource,
 } from '@grafana/data';
-import { decoupleHideFromState } from '@grafana/data/src/field/fieldState';
+import { decoupleHideFromState } from '@grafana/data/internal';
 import { config } from '@grafana/runtime';
 import { VisibilityMode } from '@grafana/schema';
 
-import { XYShowMode, SeriesMapping, XYSeriesConfig } from './panelcfg.gen';
-import { XYSeries } from './types2';
+import { XYShowMode, SeriesMapping, type XYSeriesConfig } from './panelcfg.gen';
+import { type XYSeries } from './types2';
 
 export function fmt(field: Field, val: number): string {
   if (field.display) {
@@ -89,19 +89,18 @@ export function prepSeries(
 
       let frameSeries: XYSeries[] = [];
 
-      // only grabbing number fields (exclude time, string, enum, other)
-      let onlyNumFields = frame.fields.filter((field) => field.type === FieldType.number);
+      let onlyNumTimeFields = frame.fields.filter(
+        (field) => field.type === FieldType.number || field.type === FieldType.time
+      );
 
       // only one of these per frame
-      let x = onlyNumFields.find((field) => xMatcher(field, frame, frames));
-      let color =
-        colorMatcher != null
-          ? onlyNumFields.find((field) => field !== x && colorMatcher!(field, frame, frames))
-          : undefined;
-      let size =
-        sizeMatcher != null
-          ? onlyNumFields.find((field) => field !== x && field !== color && sizeMatcher!(field, frame, frames))
-          : undefined;
+      let x = onlyNumTimeFields.find((field) => xMatcher(field, frame, frames));
+
+      // only grabbing number fields (exclude time, string, enum, other)
+      let onlyNumFields = onlyNumTimeFields.filter((field) => field.type === FieldType.number);
+
+      let color = colorMatcher != null ? onlyNumFields.find((field) => colorMatcher(field, frame, frames)) : undefined;
+      let size = sizeMatcher != null ? onlyNumFields.find((field) => sizeMatcher(field, frame, frames)) : undefined;
 
       // x field is required
       if (x != null) {

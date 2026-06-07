@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	testifymock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/grafana/pkg/bus"
@@ -16,20 +17,22 @@ import (
 	"github.com/grafana/grafana/pkg/infra/tracing"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/mock"
+	"github.com/grafana/grafana/pkg/services/apiserver"
 	"github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/dashboards/dashboardaccess"
-	"github.com/grafana/grafana/pkg/services/dashboards/database"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/folder"
 	"github.com/grafana/grafana/pkg/services/folder/folderimpl"
-	"github.com/grafana/grafana/pkg/services/guardian"
 	"github.com/grafana/grafana/pkg/services/org"
-	"github.com/grafana/grafana/pkg/services/quota/quotatest"
+	"github.com/grafana/grafana/pkg/services/search/sort"
 	"github.com/grafana/grafana/pkg/services/sqlstore"
 	"github.com/grafana/grafana/pkg/services/sqlstore/permissions"
 	"github.com/grafana/grafana/pkg/services/supportbundles/supportbundlestest"
-	"github.com/grafana/grafana/pkg/services/tag/tagimpl"
 	"github.com/grafana/grafana/pkg/services/user"
+	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/storage/legacysql/dualwrite"
+	"github.com/grafana/grafana/pkg/storage/unified/resource"
+	resourcepb "github.com/grafana/grafana/pkg/storage/unified/resourcepb"
 )
 
 func benchmarkDashboardPermissionFilter(b *testing.B, numUsers, numDashboards, numFolders, nestingLevel int) {
@@ -43,19 +46,14 @@ func benchmarkDashboardPermissionFilter(b *testing.B, numUsers, numDashboards, n
 	}}
 
 	features := featuremgmt.WithFeatures()
-	// if nestingLevel > 0 enable nested folders
-	if nestingLevel > 0 {
-		features = featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders)
-	}
-
-	store := setupBenchMark(b, usr, features, numUsers, numDashboards, numFolders, nestingLevel)
+	store, cfg := setupBenchMark(b, usr, features, numUsers, numDashboards, numFolders, nestingLevel)
 
 	recursiveQueriesAreSupported, err := store.RecursiveQueriesAreSupported()
 	require.NoError(b, err)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		filter := permissions.NewAccessControlDashboardPermissionFilter(&usr, dashboardaccess.PERMISSION_VIEW, "", features, recursiveQueriesAreSupported)
+		filter := permissions.NewAccessControlDashboardPermissionFilter(&usr, dashboardaccess.PERMISSION_VIEW, "", features, recursiveQueriesAreSupported, store.GetDialect(), cfg.MaxNestedFolderDepth)
 		var result int
 		err := store.WithDbSession(context.Background(), func(sess *sqlstore.DBSession) error {
 			q, params := filter.Where()
@@ -69,28 +67,20 @@ func benchmarkDashboardPermissionFilter(b *testing.B, numUsers, numDashboards, n
 	}
 }
 
-func setupBenchMark(b *testing.B, usr user.SignedInUser, features featuremgmt.FeatureToggles, numUsers, numDashboards, numFolders, nestingLevel int) db.DB {
-	if nestingLevel > folder.MaxNestedFolderDepth {
-		nestingLevel = folder.MaxNestedFolderDepth
-	}
-
+func setupBenchMark(b *testing.B, usr user.SignedInUser, features featuremgmt.FeatureToggles, numUsers, numDashboards, numFolders, nestingLevel int) (db.DB, *setting.Cfg) {
 	store, cfg := db.InitTestDBWithCfg(b)
 
-	quotaService := quotatest.New(false, nil)
+	if nestingLevel > cfg.MaxNestedFolderDepth {
+		nestingLevel = cfg.MaxNestedFolderDepth
+	}
 
-	folderPermissions := mock.NewMockedPermissionsService()
-	dashboardWriteStore, err := database.ProvideDashboardStore(store, cfg, features, tagimpl.ProvideService(store), quotaService)
-	require.NoError(b, err)
-
-	fStore := folderimpl.ProvideStore(store)
-	folderSvc := folderimpl.ProvideService(fStore, mock.New(), bus.ProvideBus(tracing.InitializeTracerForTest()), dashboardWriteStore, folderimpl.ProvideDashboardFolderStore(store),
-		store, features, cfg, folderPermissions, supportbundlestest.NewFakeBundleService(), nil, tracing.InitializeTracerForTest())
-
-	origNewGuardian := guardian.New
-	guardian.MockDashboardGuardian(&guardian.FakeDashboardGuardian{CanViewValue: true, CanSaveValue: true})
-	b.Cleanup(func() {
-		guardian.New = origNewGuardian
-	})
+	fStore := folderimpl.ProvideStore(store, cfg)
+	searchMock := resource.NewMockResourceClient(b)
+	searchMock.On("Search", testifymock.Anything, testifymock.Anything, testifymock.Anything).Return(&resourcepb.ResourceSearchResponse{TotalHits: 0}, nil).Maybe()
+	searchMock.On("GetStats", testifymock.Anything, testifymock.Anything, testifymock.Anything).Return(&resourcepb.ResourceStatsResponse{}, nil).Maybe()
+	folderSvc := folderimpl.ProvideService(
+		fStore, mock.New(), bus.ProvideBus(tracing.InitializeTracerForTest()),
+		nil, store, features, supportbundlestest.NewFakeBundleService(), nil, cfg, nil, tracing.InitializeTracerForTest(), searchMock, dualwrite.ProvideTestService(), sort.ProvideService(), apiserver.WithoutRestConfig)
 
 	rootFolders := make([]*folder.Folder, 0, numFolders)
 	dashes := make([]dashboards.Dashboard, 0, numDashboards)
@@ -138,7 +128,7 @@ func setupBenchMark(b *testing.B, usr user.SignedInUser, features featuremgmt.Fe
 		})
 	}
 
-	err = store.WithDbSession(context.Background(), func(sess *sqlstore.DBSession) error {
+	err := store.WithDbSession(context.Background(), func(sess *sqlstore.DBSession) error {
 		now := time.Now()
 		for i := len(dashes); i < numDashboards; i++ {
 			str := strconv.Itoa(i)
@@ -222,7 +212,7 @@ func setupBenchMark(b *testing.B, usr user.SignedInUser, features featuremgmt.Fe
 	})
 
 	require.NoError(b, err)
-	return store
+	return store, cfg
 }
 
 func BenchmarkDashboardPermissionFilter_100_100_0_0(b *testing.B) {

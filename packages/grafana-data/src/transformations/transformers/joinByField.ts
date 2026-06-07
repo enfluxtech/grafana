@@ -1,7 +1,11 @@
 import { map } from 'rxjs/operators';
 
-import { DataFrame } from '../../types/dataFrame';
-import { DataTransformContext, FieldMatcher, SynchronousDataTransformerInfo } from '../../types/transformations';
+import { type DataFrame } from '../../types/dataFrame';
+import {
+  type DataTransformContext,
+  type FieldMatcher,
+  type SynchronousDataTransformerInfo,
+} from '../../types/transformations';
 import { fieldMatchers } from '../matchers';
 import { FieldMatcherID } from '../matchers/ids';
 
@@ -38,10 +42,11 @@ export const joinByFieldTransformer: SynchronousDataTransformerInfo<JoinByFieldO
     return (data: DataFrame[]) => {
       if (data.length > 1) {
         if (options.byField && !joinBy) {
-          joinBy = fieldMatchers.get(FieldMatcherID.byName).get(ctx.interpolate(options.byField));
+          joinBy = fieldMatchers.get(FieldMatcherID.byName).get(options.byField);
         }
         const joined = joinDataFrames({ frames: data, joinBy, mode: options.mode });
         if (joined) {
+          joined.refId = `${DataTransformerID.joinByField}-${data.map((frame) => frame.refId).join('-')}`;
           return [joined];
         }
       }

@@ -2,7 +2,7 @@
 import { useRef } from 'react';
 
 import { MonacoQueryFieldLazy } from './MonacoQueryFieldLazy';
-import { Props as MonacoProps } from './MonacoQueryFieldProps';
+import { type Props as MonacoProps } from './MonacoQueryFieldProps';
 
 type Props = Omit<MonacoProps, 'onRunQuery' | 'onBlur'> & {
   onChange: (query: string) => void;
@@ -23,13 +23,5 @@ export const MonacoQueryFieldWrapper = (props: Props) => {
     onChange(value);
   };
 
-  /**
-   * Handles changes without running any queries
-   * @param value
-   */
-  const handleChange = (value: string) => {
-    onChange(value);
-  };
-
-  return <MonacoQueryFieldLazy onChange={handleChange} onRunQuery={handleRunQuery} onBlur={handleBlur} {...rest} />;
+  return <MonacoQueryFieldLazy onRunQuery={handleRunQuery} onBlur={handleBlur} {...rest} />;
 };

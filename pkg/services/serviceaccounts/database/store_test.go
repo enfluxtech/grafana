@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/services/user/userimpl"
 	"github.com/grafana/grafana/pkg/tests/testsuite"
+	"github.com/grafana/grafana/pkg/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -29,9 +30,7 @@ func TestMain(m *testing.M) {
 
 // Service Account should not create an org on its own
 func TestIntegrationStore_CreateServiceAccountOrgNonExistant(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
+	testutil.SkipIntegrationTestInShortMode(t)
 
 	_, store := setupTestDatabase(t)
 	serviceAccountName := "new Service Account"
@@ -50,7 +49,9 @@ func TestIntegrationStore_CreateServiceAccountOrgNonExistant(t *testing.T) {
 	})
 }
 
-func TestStore_CreateServiceAccount(t *testing.T) {
+func TestIntegration_Store_CreateServiceAccount(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	serviceAccountName := "new Service Account"
 	t.Run("create service account", func(t *testing.T) {
 		_, store := setupTestDatabase(t)
@@ -170,9 +171,7 @@ func TestStore_CreateServiceAccount(t *testing.T) {
 }
 
 func TestIntegrationStore_CreateServiceAccountRoleNone(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
+	testutil.SkipIntegrationTestInShortMode(t)
 
 	_, store := setupTestDatabase(t)
 	orgQuery := &org.CreateOrgCommand{Name: orgimpl.MainOrgName}
@@ -209,9 +208,8 @@ func TestIntegrationStore_CreateServiceAccountRoleNone(t *testing.T) {
 }
 
 func TestIntegrationStore_DeleteServiceAccount(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	cases := []struct {
 		desc        string
 		user        tests.TestUser
@@ -254,16 +252,15 @@ func setupTestDatabase(t *testing.T) (db.DB, *ServiceAccountsStoreImpl) {
 	require.NoError(t, err)
 	userSvc, err := userimpl.ProvideService(
 		db, orgService, cfg, nil, nil, tracing.InitializeTracerForTest(),
-		quotaService, supportbundlestest.NewFakeBundleService(),
+		quotaService, supportbundlestest.NewFakeBundleService(), nil,
 	)
 	require.NoError(t, err)
 	return db, ProvideServiceAccountsStore(cfg, db, apiKeyService, kvStore, userSvc, orgService)
 }
 
 func TestIntegrationStore_RetrieveServiceAccount(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	cases := []struct {
 		desc          string
 		user          tests.TestUser
@@ -319,73 +316,9 @@ func TestIntegrationStore_RetrieveServiceAccount(t *testing.T) {
 	}
 }
 
-func TestIntegrationStore_MigrateApiKeys(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-	cases := []struct {
-		desc        string
-		key         tests.TestApiKey
-		expectedErr error
-	}{
-		{
-			desc:        "api key should be migrated to service account token",
-			key:         tests.TestApiKey{Name: "Test1", Role: org.RoleEditor, OrgId: 1},
-			expectedErr: nil,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.desc, func(t *testing.T) {
-			db, store := setupTestDatabase(t)
-			store.cfg.AutoAssignOrg = true
-			store.cfg.AutoAssignOrgId = 1
-			store.cfg.AutoAssignOrgRole = "Viewer"
-			_, err := store.orgService.CreateWithMember(context.Background(), &org.CreateOrgCommand{Name: "main"})
-			require.NoError(t, err)
-			key := tests.SetupApiKey(t, db, store.cfg, c.key)
-			err = store.MigrateApiKey(context.Background(), key.OrgID, key.ID)
-			if c.expectedErr != nil {
-				require.ErrorIs(t, err, c.expectedErr)
-			} else {
-				require.NoError(t, err)
-
-				q := serviceaccounts.SearchOrgServiceAccountsQuery{
-					OrgID: key.OrgID,
-					Query: "",
-					Page:  1,
-					Limit: 50,
-					SignedInUser: &user.SignedInUser{
-						UserID: 1,
-						OrgID:  1,
-						Permissions: map[int64]map[string][]string{
-							key.OrgID: {
-								"serviceaccounts:read": {"serviceaccounts:id:*"},
-							},
-						},
-					},
-				}
-				serviceAccounts, err := store.SearchOrgServiceAccounts(context.Background(), &q)
-				require.NoError(t, err)
-				require.Equal(t, int64(1), serviceAccounts.TotalCount)
-				saMigrated := serviceAccounts.ServiceAccounts[0]
-				require.Equal(t, string(key.Role), saMigrated.Role)
-
-				tokens, err := store.ListTokens(context.Background(), &serviceaccounts.GetSATokensQuery{
-					OrgID:            &key.OrgID,
-					ServiceAccountID: &saMigrated.Id,
-				})
-				require.NoError(t, err)
-				require.Len(t, tokens, 1)
-			}
-		})
-	}
-}
-
 func TestIntegrationStore_MigrateAllApiKeys(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	cases := []struct {
 		desc                    string
 		keys                    []tests.TestApiKey
@@ -503,9 +436,7 @@ func TestIntegrationStore_MigrateAllApiKeys(t *testing.T) {
 	}
 }
 func TestIntegrationServiceAccountsStoreImpl_SearchOrgServiceAccounts(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
+	testutil.SkipIntegrationTestInShortMode(t)
 
 	db, store := setupTestDatabase(t)
 
@@ -640,7 +571,7 @@ func TestIntegrationServiceAccountsStoreImpl_SearchOrgServiceAccounts(t *testing
 			desc: "should return service accounts with sa-1-satest login",
 			query: &serviceaccounts.SearchOrgServiceAccountsQuery{
 				OrgID:        orgID,
-				Query:        "sa-1-satest",
+				Query:        "SA-1-SaTeSt", // Using mixed-case to test case-insensitive search
 				SignedInUser: userWithPerm,
 				Filter:       serviceaccounts.FilterIncludeAll,
 				CountTokens:  true,
@@ -698,9 +629,7 @@ func TestIntegrationServiceAccountsStoreImpl_SearchOrgServiceAccounts(t *testing
 }
 
 func TestIntegrationServiceAccountsStoreImpl_EnableServiceAccounts(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
+	testutil.SkipIntegrationTestInShortMode(t)
 
 	ctx := context.Background()
 

@@ -3,17 +3,17 @@ import { useState } from 'react';
 
 import {
   CoreApp,
-  DataSourceApi,
+  type DataSourceApi,
   formattedValueToString,
   getValueFormat,
-  PanelData,
-  PanelPlugin,
+  type PanelData,
+  type PanelPlugin,
   LoadingState,
-  DataQueryError,
+  type DataQueryError,
 } from '@grafana/data';
+import { Trans, t } from '@grafana/i18n';
 import { getTemplateSrv } from '@grafana/runtime';
 import { Drawer, Tab, TabsBar } from '@grafana/ui';
-import { t, Trans } from 'app/core/internationalization';
 import { InspectDataTab } from 'app/features/inspector/InspectDataTab';
 import { InspectErrorTab } from 'app/features/inspector/InspectErrorTab';
 import { InspectJSONTab } from 'app/features/inspector/InspectJSONTab';
@@ -22,8 +22,9 @@ import { InspectStatsTab } from 'app/features/inspector/InspectStatsTab';
 import { QueryInspector } from 'app/features/inspector/QueryInspector';
 import { InspectTab } from 'app/features/inspector/types';
 
-import { GetDataOptions } from '../../../query/state/PanelQueryRunner';
-import { DashboardModel, PanelModel } from '../../state';
+import { type GetDataOptions } from '../../../query/state/PanelQueryRunner';
+import { type DashboardModel } from '../../state/DashboardModel';
+import { type PanelModel } from '../../state/PanelModel';
 
 interface Props {
   dashboard: DashboardModel;
@@ -93,7 +94,7 @@ export const InspectContent = ({
     >
       {activeTab === InspectTab.Data && (
         <InspectDataTab
-          dataName={panel.getDisplayTitle()}
+          dataName={panelTitle}
           panelPluginId={panel.type}
           fieldConfig={panel.fieldConfig}
           hasTransformations={Boolean(panel.transformations?.length)}
@@ -128,7 +129,7 @@ function getErrors(data: PanelData | undefined): DataQueryError[] {
   if (!errors.length && data?.state === LoadingState.Error) {
     return [
       {
-        message: 'Error loading data',
+        message: t('dashboard.get-errors.message.error-loading-data', 'Error loading data'),
       },
     ];
   }

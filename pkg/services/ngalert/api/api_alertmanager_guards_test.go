@@ -499,7 +499,7 @@ func defaultGettableReceiver(t *testing.T, uid string, provenance models.Provena
 func defaultPostableReceiver(t *testing.T, uid string) *definitions.PostableApiReceiver {
 	t.Helper()
 	return &definitions.PostableApiReceiver{
-		Receiver: amConfig.Receiver{
+		Receiver: definitions.Receiver{
 			Name: uid,
 		},
 		PostableGrafanaReceivers: definitions.PostableGrafanaReceivers{
@@ -693,6 +693,7 @@ func TestCheckMuteTimes(t *testing.T) {
 }
 
 func gettableMuteIntervals(t *testing.T, muteTimeIntervals []amConfig.MuteTimeInterval, provenances map[string]definitions.Provenance) definitions.GettableUserConfig {
+	t.Helper()
 	return definitions.GettableUserConfig{
 		AlertmanagerConfig: definitions.GettableApiAlertingConfig{
 			MuteTimeProvenances: provenances,

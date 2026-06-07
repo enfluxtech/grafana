@@ -19,6 +19,7 @@ import (
 	contextmodel "github.com/grafana/grafana/pkg/services/contexthandler/model"
 	"github.com/grafana/grafana/pkg/services/team"
 	"github.com/grafana/grafana/pkg/services/user"
+	"github.com/grafana/grafana/pkg/util/testutil"
 	"github.com/grafana/grafana/pkg/web"
 )
 
@@ -30,7 +31,9 @@ type getDescriptionTestCase struct {
 	expectedStatus int
 }
 
-func TestApi_getDescription(t *testing.T) {
+func TestIntegrationApi_getDescription(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []getDescriptionTestCase{
 		{
 			desc: "should return description",
@@ -128,6 +131,61 @@ func TestApi_getDescription(t *testing.T) {
 	}
 }
 
+func TestIntegrationApi_getDescription_K8sFormat(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
+	tests := []getDescriptionTestCase{
+		{
+			desc: "should return description with k8s action format",
+			options: Options{
+				Resource:          "testresources",
+				ResourceAttribute: "uid",
+				APIGroup:          "test.grafana.app",
+				K8sActionFormat:   true,
+				Assignments: Assignments{
+					Users:        true,
+					Teams:        true,
+					BuiltInRoles: true,
+				},
+				PermissionsToActions: map[string][]string{
+					"View": {"test.grafana.app/testresources:get"},
+					"Edit": {"test.grafana.app/testresources:get", "test.grafana.app/testresources:update"},
+				},
+			},
+			permissions: []accesscontrol.Permission{
+				{Action: "test.grafana.app/testresources:get_permissions"},
+			},
+			expected: Description{
+				Assignments: Assignments{
+					Users:        true,
+					Teams:        true,
+					BuiltInRoles: true,
+				},
+				Permissions: []string{"View", "Edit"},
+			},
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			service, _, _ := setupTestEnvironment(t, tt.options)
+			server := setupTestServer(t, &user.SignedInUser{OrgID: 1, Permissions: map[int64]map[string][]string{1: accesscontrol.GroupScopesByActionContext(context.Background(), tt.permissions)}}, service)
+
+			// Verify endpoint still works at legacy URL
+			req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/access-control/%s/description", tt.options.Resource), nil)
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			server.ServeHTTP(recorder, req)
+
+			got := Description{}
+			require.NoError(t, json.NewDecoder(recorder.Body).Decode(&got))
+			assert.Equal(t, tt.expected, got)
+			assert.Equal(t, tt.expectedStatus, recorder.Code)
+		})
+	}
+}
+
 type getPermissionsTestCase struct {
 	desc           string
 	resourceID     string
@@ -135,7 +193,9 @@ type getPermissionsTestCase struct {
 	expectedStatus int
 }
 
-func TestApi_getPermissions(t *testing.T) {
+func TestIntegrationApi_getPermissions(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []getPermissionsTestCase{
 		{
 			desc:       "expect permissions for resource with id 1",
@@ -181,7 +241,9 @@ type setBuiltinPermissionTestCase struct {
 	permissions    []accesscontrol.Permission
 }
 
-func TestApi_setBuiltinRolePermission(t *testing.T) {
+func TestIntegrationApi_setBuiltinRolePermission(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []setBuiltinPermissionTestCase{
 		{
 			desc:           "should set Edit permission for Viewer",
@@ -260,7 +322,9 @@ type setTeamPermissionTestCase struct {
 	byUID          bool
 }
 
-func TestApi_setTeamPermission(t *testing.T) {
+func TestIntegrationApi_setTeamPermission(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []setTeamPermissionTestCase{
 		{
 			desc:           "should set Edit permission for team 1",
@@ -331,7 +395,12 @@ func TestApi_setTeamPermission(t *testing.T) {
 			server := setupTestServer(t, &user.SignedInUser{OrgID: 1, Permissions: map[int64]map[string][]string{1: accesscontrol.GroupScopesByActionContext(context.Background(), tt.permissions)}}, service)
 
 			// seed team
-			team, err := teamSvc.CreateTeam(context.Background(), "test", "test@test.com", 1)
+			teamCmd := team.CreateTeamCommand{
+				Name:  "test",
+				Email: "test@test.com",
+				OrgID: 1,
+			}
+			team, err := teamSvc.CreateTeam(context.Background(), &teamCmd)
 			require.NoError(t, err)
 
 			assignTo := strconv.Itoa(int(tt.teamID))
@@ -343,7 +412,6 @@ func TestApi_setTeamPermission(t *testing.T) {
 			recorder := setPermission(t, server, testOptions.Resource, tt.resourceID, tt.permission, "teams", assignTo)
 			assert.Equal(t, tt.expectedStatus, recorder.Code)
 
-			assert.Equal(t, tt.expectedStatus, recorder.Code)
 			if tt.expectedStatus == http.StatusOK {
 				permissions, _ := getPermission(t, server, testOptions.Resource, tt.resourceID)
 				require.Len(t, permissions, 1)
@@ -363,7 +431,9 @@ type setUserPermissionTestCase struct {
 	permissions    []accesscontrol.Permission
 }
 
-func TestApi_setUserPermission(t *testing.T) {
+func TestIntegrationApi_setUserPermission(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	tests := []setUserPermissionTestCase{
 		{
 			desc:           "should set Edit permission for user 1",
@@ -428,9 +498,102 @@ func TestApi_setUserPermission(t *testing.T) {
 			recorder := setPermission(t, server, testOptions.Resource, tt.resourceID, tt.permission, "users", strconv.Itoa(int(tt.userID)))
 			assert.Equal(t, tt.expectedStatus, recorder.Code)
 
-			assert.Equal(t, tt.expectedStatus, recorder.Code)
 			if tt.expectedStatus == http.StatusOK {
 				permissions, _ := getPermission(t, server, testOptions.Resource, tt.resourceID)
+				require.Len(t, permissions, 1)
+				assert.Equal(t, tt.permission, permissions[0].Permission)
+				assert.Equal(t, tt.userID, permissions[0].UserID)
+			}
+		})
+	}
+}
+
+func TestIntegrationApi_setUserPermissionForTeams(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
+	type setUserPermissionForTeamsTestCase struct {
+		setUserPermissionTestCase
+		teamCmd *team.CreateTeamCommand
+	}
+	tests := []setUserPermissionForTeamsTestCase{
+		{
+			setUserPermissionTestCase: setUserPermissionTestCase{
+				desc:           "should set Member permission for user 1",
+				userID:         1,
+				expectedStatus: 200,
+				permission:     "Member",
+				permissions: []accesscontrol.Permission{
+					{Action: "teams.permissions:read", Scope: accesscontrol.ScopeTeamsAll},
+					{Action: "teams.permissions:write", Scope: accesscontrol.ScopeTeamsAll},
+					{Action: accesscontrol.ActionOrgUsersRead, Scope: accesscontrol.ScopeUsersAll},
+				},
+			},
+			teamCmd: &team.CreateTeamCommand{
+				Name:  "test",
+				Email: "test@test.com",
+				OrgID: 1,
+			},
+		},
+		{
+			setUserPermissionTestCase: setUserPermissionTestCase{
+				desc:           "should set Admin permission for user 1",
+				userID:         1,
+				expectedStatus: 200,
+				permission:     "Admin",
+				permissions: []accesscontrol.Permission{
+					{Action: "teams.permissions:read", Scope: accesscontrol.ScopeTeamsAll},
+					{Action: "teams.permissions:write", Scope: accesscontrol.ScopeTeamsAll},
+					{Action: accesscontrol.ActionOrgUsersRead, Scope: accesscontrol.ScopeUsersAll},
+				},
+			},
+			teamCmd: &team.CreateTeamCommand{
+				Name:  "test",
+				Email: "test@test.com",
+				OrgID: 1,
+			},
+		},
+		{
+			setUserPermissionTestCase: setUserPermissionTestCase{
+				desc:           "should return status 400 for a provisioned team",
+				userID:         1,
+				expectedStatus: 400,
+				permission:     "Member",
+				permissions: []accesscontrol.Permission{
+					{Action: "teams.permissions:read", Scope: accesscontrol.ScopeTeamsAll},
+					{Action: "teams.permissions:write", Scope: accesscontrol.ScopeTeamsAll},
+					{Action: accesscontrol.ActionOrgUsersRead, Scope: accesscontrol.ScopeUsersAll},
+				},
+			},
+			teamCmd: &team.CreateTeamCommand{
+				Name:          "test",
+				Email:         "test@test.com",
+				OrgID:         1,
+				IsProvisioned: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			service, usrSvc, teamSvc := setupTestEnvironment(t, testOptionsForTeams)
+			server := setupTestServer(t, &user.SignedInUser{
+				OrgID:       1,
+				Permissions: map[int64]map[string][]string{1: accesscontrol.GroupScopesByActionContext(context.Background(), tt.permissions)},
+			}, service)
+
+			_, err := usrSvc.Create(context.Background(), &user.CreateUserCommand{Login: "test", OrgID: 1})
+			require.NoError(t, err)
+
+			expectedTeam, err := teamSvc.CreateTeam(context.Background(), tt.teamCmd)
+			require.NoError(t, err)
+
+			resourceID := strconv.Itoa(int(expectedTeam.ID))
+
+			recorder := setPermission(t, server, testOptionsForTeams.Resource, resourceID, tt.permission, "users", strconv.Itoa(int(tt.userID)))
+			assert.Equal(t, tt.expectedStatus, recorder.Code)
+
+			if tt.expectedStatus == http.StatusOK {
+				permissions, _ := getPermission(t, server, testOptionsForTeams.Resource, resourceID)
 				require.Len(t, permissions, 1)
 				assert.Equal(t, tt.permission, permissions[0].Permission)
 				assert.Equal(t, tt.userID, permissions[0].UserID)
@@ -479,6 +642,18 @@ var testOptions = Options{
 	},
 }
 
+var testOptionsForTeams = Options{
+	Resource:          "teams",
+	ResourceAttribute: "id",
+	Assignments: Assignments{
+		Users: true,
+	},
+	PermissionsToActions: map[string][]string{
+		"Member": {"teams:read"},
+		"Admin":  {"teams:read", "teams:write", "teams:delete"},
+	},
+}
+
 func getPermission(t *testing.T, server *web.Mux, resource, resourceID string) ([]resourcePermissionDTO, *httptest.ResponseRecorder) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/access-control/%s/%s", resource, resourceID), nil)
 	require.NoError(t, err)
@@ -520,7 +695,12 @@ func seedPermissions(t *testing.T, resourceID string, usrSvc user.Service, teamS
 	t.Helper()
 
 	// seed team 1 with "Edit" permission on dashboard 1
-	team, err := teamSvc.CreateTeam(context.Background(), "test", "test@test.com", 1)
+	teamCmd := team.CreateTeamCommand{
+		Name:  "test",
+		Email: "test@test.com",
+		OrgID: 1,
+	}
+	team, err := teamSvc.CreateTeam(context.Background(), &teamCmd)
 	require.NoError(t, err)
 	_, err = service.SetTeamPermission(context.Background(), team.OrgID, team.ID, resourceID, "Edit")
 	require.NoError(t, err)

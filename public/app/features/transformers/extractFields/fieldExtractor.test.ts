@@ -1,9 +1,8 @@
 import { FieldType, toDataFrame } from '@grafana/data';
-import { config } from '@grafana/runtime';
 
 import { addExtractedFields } from './extractFields';
 import { fieldExtractors } from './fieldExtractors';
-import { ExtractFieldsOptions, FieldExtractorID } from './types';
+import { type ExtractFieldsOptions, FieldExtractorID } from './types';
 
 describe('Extract fields from text', () => {
   it('JSON extractor', async () => {
@@ -120,9 +119,7 @@ describe('Extract fields from text', () => {
     const frame = toDataFrame({
       fields: [{ name: 'foo', type: FieldType.string, values: ['{"foo":"extracedValue1"}'] }],
     });
-    config.featureToggles.extractFieldsNameDeduplication = true;
     const newFrame = addExtractedFields(frame, { format: FieldExtractorID.JSON, source: 'foo' });
-    config.featureToggles.extractFieldsNameDeduplication = false;
     expect(newFrame.fields.length).toBe(2);
     expect(newFrame.fields[1].name).toBe('foo 1');
   });
@@ -131,9 +128,7 @@ describe('Extract fields from text', () => {
     const frame = toDataFrame({
       fields: [{ name: 'foo', type: FieldType.string, values: ['{"bar":"extracedValue1"}'] }],
     });
-    config.featureToggles.extractFieldsNameDeduplication = true;
     const newFrame = addExtractedFields(frame, { format: FieldExtractorID.JSON, source: 'foo' });
-    config.featureToggles.extractFieldsNameDeduplication = false;
     expect(newFrame.fields.length).toBe(2);
     expect(newFrame.fields[1].name).toBe('bar');
   });
@@ -150,5 +145,36 @@ describe('Extract fields from text', () => {
         "FieldB": "re30z",
       }
     `);
+  });
+
+  describe('Delimiter', () => {
+    it('splits by comma', async () => {
+      const extractor = fieldExtractors.get(FieldExtractorID.Delimiter);
+      const parse = extractor.getParser({});
+      const out = parse('a,b,c');
+
+      expect(out).toMatchInlineSnapshot(`
+        {
+          "a": 1,
+          "b": 1,
+          "c": 1,
+        }
+      `);
+    });
+
+    it('trims whitespace', async () => {
+      const extractor = fieldExtractors.get(FieldExtractorID.Delimiter);
+      const parse = extractor.getParser({});
+      const out = parse(` a, b,c, d `);
+
+      expect(out).toMatchInlineSnapshot(`
+        {
+          "a": 1,
+          "b": 1,
+          "c": 1,
+          "d": 1,
+        }
+      `);
+    });
   });
 });

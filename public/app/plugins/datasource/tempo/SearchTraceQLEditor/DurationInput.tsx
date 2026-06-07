@@ -1,8 +1,8 @@
 import { css } from '@emotion/css';
 
-import { Select, HorizontalGroup, Input, useStyles2 } from '@grafana/ui';
+import { Select, Stack, Input, useStyles2 } from '@grafana/ui';
 
-import { TraceqlFilter } from '../dataquery.gen';
+import { type TraceqlFilter } from '../dataquery.gen';
 
 import { operatorSelectableValue } from './utils';
 
@@ -34,7 +34,7 @@ const DurationInput = ({ filter, operators, updateFilter }: Props) => {
   }
 
   return (
-    <HorizontalGroup spacing={'none'}>
+    <Stack gap={0}>
       <Select
         className={styles.noBoxShadow}
         inputId={`${filter.id}-operator`}
@@ -59,7 +59,7 @@ const DurationInput = ({ filter, operators, updateFilter }: Props) => {
         invalid={invalid}
         width={18}
       />
-    </HorizontalGroup>
+    </Stack>
   );
 };
 
