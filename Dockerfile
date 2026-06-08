@@ -12,7 +12,7 @@ ARG JS_PLATFORM=linux/amd64
 # ── Frontend build ────────────────────────────────────────────────────────────
 FROM --platform=${JS_PLATFORM} ${JS_IMAGE} AS js-builder
 
-ENV NODE_OPTIONS="--max_old_space_size=8000 --import tsx"
+ENV NODE_OPTIONS=--max_old_space_size=8000
 
 WORKDIR /tmp/grafana
 
@@ -33,7 +33,7 @@ RUN apk add --no-cache make build-base python3
 # Use plain yarn install (security-01 lockfile is out of sync with package.json)
 RUN yarn install
 
-# tsx is needed for webpack-cli to load TypeScript config files (Grafana 13+)
+# tsx is needed for webpack-cli to load ESM TypeScript config files (Grafana 13+)
 RUN npm install -g tsx
 
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
@@ -41,7 +41,8 @@ COPY scripts scripts
 COPY emails emails
 
 ENV NODE_ENV=production
-RUN yarn build
+# Import tsx only for the build step so webpack-cli can load .ts webpack configs
+RUN NODE_OPTIONS="--max_old_space_size=8000 --import tsx" yarn build
 
 # ── Final image ───────────────────────────────────────────────────────────────
 FROM grafana/grafana:${GRAFANA_VERSION}
