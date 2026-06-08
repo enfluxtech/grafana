@@ -30,8 +30,7 @@ COPY enflux/grafana_icon.svg public/img/grafana_icon.svg
 
 RUN apk add --no-cache make build-base python3
 
-# Use plain yarn install (security-01 lockfile is out of sync with package.json)
-RUN yarn install
+RUN yarn install --immutable
 
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
