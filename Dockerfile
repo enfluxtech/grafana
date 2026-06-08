@@ -51,6 +51,8 @@ COPY scripts scripts
 COPY emails emails
 
 ENV NODE_ENV=production
+# Clear webpack filesystem cache to prevent stale chunks from cached yarn install layer
+RUN rm -rf node_modules/.cache
 RUN NODE_OPTIONS="--max_old_space_size=8000 --import tsx" yarn build
 
 # ── Final image ───────────────────────────────────────────────────────────────
