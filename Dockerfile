@@ -26,7 +26,6 @@ COPY conf/defaults.ini ./conf/defaults.ini
 
 # Inject Enflux branding before the build
 COPY enflux/Branding.tsx public/app/core/components/Branding/Branding.tsx
-COPY enflux/grafana_icon.svg public/img/grafana_icon.svg
 
 RUN apk add --no-cache make build-base python3
 
@@ -70,6 +69,7 @@ RUN rm -rf /usr/share/grafana/public/build
 
 # Replace with our fully custom-branded build
 COPY --from=js-builder /tmp/grafana/public/build /usr/share/grafana/public/build
-COPY --from=js-builder /tmp/grafana/public/img/grafana_icon.svg /usr/share/grafana/public/img/grafana_icon.svg
+# Add Enflux logo as a static asset (referenced directly in Branding.tsx, not webpack-compiled)
+COPY enflux/enflux_icon.svg /usr/share/grafana/public/img/enflux_icon.svg
 
 USER grafana
