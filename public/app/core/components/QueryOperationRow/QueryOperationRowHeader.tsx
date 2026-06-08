@@ -1,11 +1,11 @@
 import { css, cx } from '@emotion/css';
-import { DraggableProvided } from '@hello-pangea/dnd';
-import { MouseEventHandler } from 'react';
+import { type DraggableProvided } from '@hello-pangea/dnd';
+import { type MouseEventHandler } from 'react';
 import * as React from 'react';
 
-import { GrafanaTheme2 } from '@grafana/data';
+import { type GrafanaTheme2 } from '@grafana/data';
+import { t } from '@grafana/i18n';
 import { Icon, IconButton, useStyles2, Stack } from '@grafana/ui';
-import { t } from 'app/core/internationalization';
 
 export interface QueryOperationRowHeaderProps {
   actionsElement?: React.ReactNode;
@@ -65,13 +65,14 @@ export const QueryOperationRowHeader = ({
             onClick={onRowToggle}
             aria-expanded={isContentVisible}
             aria-controls={id}
+            tabIndex={0}
           />
         )}
         {title && (
           // disabling the a11y rules here as the IconButton above handles keyboard interactions
           // this is just to provide a better experience for mouse users
           // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-          <div className={styles.titleWrapper} onClick={onRowToggle} aria-label="Query operation row title">
+          <div className={styles.titleWrapper} onClick={onRowToggle}>
             <div className={cx(styles.title, disabled && styles.disabled)}>{title}</div>
           </div>
         )}

@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 
 import { makeTimeRange } from '@grafana/data';
 
-import { TimeRangeContextHookValue, TimeRangeProvider, useTimeRangeContext } from './TimeRangeContext';
+import { type TimeRangeContextHookValue, TimeRangeProvider, useTimeRangeContext } from './TimeRangeContext';
 
 // Should be fine to have this globally as single file should not be parallelized
 let context: TimeRangeContextHookValue | undefined = undefined;
@@ -86,7 +86,7 @@ describe('TimeRangeProvider', () => {
       context2 = val;
     }
 
-    const renderContext = render(
+    const { rerender } = render(
       <TimeRangeProvider>
         <TestComponent onContextChange={onContextChange} />
         <TestComponent onContextChange={onContextChange2} />
@@ -104,7 +104,7 @@ describe('TimeRangeProvider', () => {
       syncedValue: timeRange,
     });
 
-    renderContext.rerender(
+    rerender(
       <TimeRangeProvider>
         <TestComponent onContextChange={onContextChange2} />
       </TimeRangeProvider>

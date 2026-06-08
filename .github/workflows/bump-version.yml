@@ -3,73 +3,57 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Needs to match, exactly, the name of a milestone. The version to be released please respect: major.minor.patch or major.minor.patch-beta<number> format. example: 7.4.3 or 7.4.3-beta1'
+        description: 'Needs to match, exactly, the name of a milestone. The version to be released please respect: major.minor.patch, major.minor.patch-preview or major.minor.patch-preview<number> format. example: 7.4.3, 7.4.3-preview or 7.4.3-preview1'
         required: true
-env:
-    YARN_ENABLE_IMMUTABLE_INSTALLS: false
+      push:
+        default: true
+        required: false
+      dry_run:
+        default: false
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
-  main:
+  bump-version:
     runs-on: ubuntu-latest
     steps:
-    # This is a basic workflow to help you get started with Actions
-      - uses: actions-ecosystem/action-regex-match@v2.0.2
-        if: ${{ github.event.inputs.version != '' }}
-        id: regex-match
+      - uses: grafana/shared-workflows/actions/get-vault-secrets@main
         with:
-          text: ${{ github.event.inputs.version }}
-          regex: '^(\d+.\d+).\d+(?:-(?:(beta\d+)|(pre)))?$'
-      - uses: actions-ecosystem/action-regex-match@v2.0.2
-        if: ${{ inputs.version_call != '' }}
-        id: regex-match-version-call
+          repo_secrets: |
+            GRAFANA_DELIVERY_BOT_APP_PEM=delivery-bot-app:PRIVATE_KEY
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a
         with:
-          text: ${{ inputs.version_call }}
-          regex: '^(\d+.\d+).\d+(?:-(?:(beta\d+)|(pre)))?$'
-      - name: Validate input version
-        if: ${{ steps.regex-match.outputs.match == '' && github.event.inputs.version != '' }}
+          app_id: ${{ vars.DELIVERY_BOT_APP_ID }}
+          private_key: ${{ env.GRAFANA_DELIVERY_BOT_APP_PEM }}
+          repositories: '["grafana"]'
+          permissions: '{"contents": "write", "pull_requests": "write", "workflows": "write"}'
+      - name: Checkout Grafana
+        uses: actions/checkout@v5
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+      - name: Update package.json versions
+        uses: ./pkg/build/actions/bump-version
+        with:
+          version: ${{ inputs.version }}
+      - if: ${{ inputs.push }}
+        name: Push & Create PR
+        env:
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
         run: |
-          echo "The input version format is not correct, please respect:\
-          major.minor.patch or major.minor.patch-beta.number format. \
-          example: 7.4.3 or 7.4.3-beta1"
-          exit 1
-      - name: Validate input version call
-        if: ${{ inputs.version_call != '' && steps.regex-match-version-call.outputs.match == '' }}
-        run: |
-          echo "The input version format is not correct, please respect:\
-          major.minor.patch or major.minor.patch-beta<number> format. \
-          example: 7.4.3 or 7.4.3-beta1"
-          exit 1
-
-      - uses: actions/checkout@v3
-
-      - name: Set intermedia variables
-        id: intermedia
-        run: |
-          echo "short_ref=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
-          echo "check_passed=false" >> $GITHUB_OUTPUT
-          echo "branch_name=v${{steps.regex-match.outputs.group1}}" >> $GITHUB_OUTPUT
-          echo "branch_exist=$(git ls-remote --heads https://github.com/grafana/grafana.git v${{ steps.regex-match.outputs.group1 }}.x | wc -l)" >> $GITHUB_OUTPUT
-
-      - name: Check input version is aligned with branch(main)
-        if: ${{ github.event.inputs.version != '' && steps.intermedia.outputs.branch_exist == '0' && !contains(github.event.inputs.version, 'pre') && !contains(steps.intermedia.outputs.short_ref, 'main') }}
-        run: |
-          echo "When you want to deliver a new new minor version, you might want to create a new branch first \
-          with naming convention v[major].[minor].x, and just run the workflow on that branch. \
-          Run the workflow on main only when needed"
-          exit 1
-
-      - name: Checkout Actions
-        uses: actions/checkout@v3
-        with:
-          repository: "grafana/grafana-github-actions"
-          path: ./actions
-          ref: main
-      - uses: actions/setup-node@v3.5.1
-        with:
-          node-version: '16'
-      - name: Install Actions
-        run: npm install --production --prefix ./actions
-      - name: Run bump version (manually invoked)        
-        uses: ./actions/bump-version
-        with:
-          token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
-          metricsWriteAPIKey: ${{ secrets.GRAFANA_MISC_STATS_API_KEY }}
+          git config --local user.name "grafana-delivery-bot[bot]"
+          git config --local user.email "grafana-delivery-bot[bot]@users.noreply.github.com"
+          git config --local --add --bool push.autoSetupRemote true
+          git checkout -b "bump-version/${RUN_ID}/${VERSION}"
+          git add .
+          git commit -m "bump version ${VERSION}"
+          git push
+          gh pr create --dry-run="$DRY_RUN" -l "type/ci" -l "no-changelog" -B "$REF_NAME" --title "Release: Bump version to ${VERSION}" --body "Updated version to ${VERSION}"

@@ -1,36 +1,32 @@
 package search
 
 import (
-	"context"
-
-	"github.com/grafana/grafana/pkg/services/store/kind/dashboard"
+	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/storage/unified/resource"
+	"github.com/grafana/grafana/pkg/storage/unified/search/builders"
 )
 
-// The default list of open source document builders
-type StandardDocumentBuilders struct{}
+// StandardDocumentBuilders provides the default list of document builders for open source Grafana.
+// It combines the standard document builder with external builders for dashboards and users.
+type StandardDocumentBuilders struct {
+	sql       db.DB
+	sprinkles builders.DashboardStats
+}
 
-// Hooked up so wire can fill in different sprinkles
-func ProvideDocumentBuilders() resource.DocumentBuilderSupplier {
-	return &StandardDocumentBuilders{}
+func ProvideDocumentBuilders(sql db.DB, sprinkles builders.DashboardStats) resource.DocumentBuilderSupplier {
+	return &StandardDocumentBuilders{sql, sprinkles}
 }
 
 func (s *StandardDocumentBuilders) GetDocumentBuilders() ([]resource.DocumentBuilderInfo, error) {
-	dashboards, err := DashboardBuilder(func(ctx context.Context, namespace string, blob resource.BlobSupport) (resource.DocumentBuilder, error) {
-		return &DashboardDocumentBuilder{
-			Namespace:        namespace,
-			Blob:             blob,
-			Stats:            NewDashboardStatsLookup(nil), // empty stats
-			DatasourceLookup: dashboard.CreateDatasourceLookup([]*dashboard.DatasourceQueryResult{{}}),
-		}, nil
-	})
+	all, err := builders.All(s.sql, s.sprinkles)
+	if err != nil {
+		return nil, err
+	}
 
-	return []resource.DocumentBuilderInfo{
-		// The default builder
-		resource.DocumentBuilderInfo{
-			Builder: resource.StandardDocumentBuilder(),
+	result := []resource.DocumentBuilderInfo{
+		{
+			Builder: resource.StandardDocumentBuilder(resource.AppManifests()),
 		},
-		// Dashboard builder
-		dashboards,
-	}, err
+	}
+	return append(result, all...), nil
 }

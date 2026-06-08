@@ -2,11 +2,11 @@ import { assertIsDefined } from 'test/helpers/asserts';
 
 import {
   createTheme,
-  FieldConfig,
+  type FieldConfig,
   FieldType,
   MutableDataFrame,
   VizOrientation,
-  FieldConfigSource,
+  type FieldConfigSource,
 } from '@grafana/data';
 import {
   LegendDisplayMode,
@@ -18,8 +18,8 @@ import {
   defaultTimeZone,
 } from '@grafana/schema';
 
-import { FieldConfig as PanelFieldConfig } from './panelcfg.gen';
-import { prepSeries, prepConfig, PrepConfigOpts } from './utils';
+import { type FieldConfig as PanelFieldConfig } from './panelcfg.gen';
+import { prepSeries, prepConfig, type PrepConfigOpts } from './utils';
 
 const fieldConfig: FieldConfigSource = {
   defaults: {},
@@ -166,14 +166,14 @@ describe('BarChart utils', () => {
   });
 
   describe('prepareGraphableFrames', () => {
-    it('will warn when there is no frames in the response', () => {
+    it('will return empty string when there are no frames in the response', () => {
       const info = prepSeries([], fieldConfig, StackingMode.None, createTheme());
-      const warning = assertIsDefined('warn' in info ? info : null);
 
-      expect(warning.warn).toEqual('No data in response');
+      expect(info.warn).toBe('');
+      expect(info.series).toHaveLength(0);
     });
 
-    it('will warn when there is no data in the response', () => {
+    it('will return empty string when there is no data in the response', () => {
       const info = prepSeries(
         [
           {
@@ -185,9 +185,9 @@ describe('BarChart utils', () => {
         StackingMode.None,
         createTheme()
       );
-      const warning = assertIsDefined('warn' in info ? info : null);
 
-      expect(warning.warn).toEqual('No data in response');
+      expect(info.warn).toBe('');
+      expect(info.series).toHaveLength(0);
     });
 
     it('will warn when there is no string or time field', () => {
@@ -201,7 +201,7 @@ describe('BarChart utils', () => {
 
       const info = prepSeries([df], fieldConfig, StackingMode.None, createTheme());
       const warning = assertIsDefined('warn' in info ? info : null);
-      expect(warning.warn).toEqual('Bar charts requires a string or time field');
+      expect(warning.warn).toEqual('Bar charts require a string or time field');
     });
 
     it('will warn when there are no numeric fields in the response', () => {

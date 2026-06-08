@@ -1,24 +1,34 @@
-import { PropsWithChildren } from 'react';
-import { render, screen, renderHook, waitFor, getWrapper } from 'test/test-utils';
+import { type PropsWithChildren } from 'react';
+import { getWrapper, render, renderHook, screen, waitFor } from 'test/test-utils';
 
+import { config } from '@grafana/runtime';
 import { setupMswServer } from 'app/features/alerting/unified/mockApi';
 import { setFolderAccessControl } from 'app/features/alerting/unified/mocks/server/configure';
-import { AlertManagerDataSourceJsonData, AlertManagerImplementation } from 'app/plugins/datasource/alertmanager/types';
-import { AccessControlAction } from 'app/types';
-import { CombinedRule } from 'app/types/unified-alerting';
+import { MIMIR_DATASOURCE_UID } from 'app/features/alerting/unified/mocks/server/constants';
+import {
+  type AlertManagerDataSourceJsonData,
+  AlertManagerImplementation,
+} from 'app/plugins/datasource/alertmanager/types';
+import { AccessControlAction } from 'app/types/accessControl';
+import { type CombinedRule } from 'app/types/unified-alerting';
 
 import { getCloudRule, getGrafanaRule, grantUserPermissions, mockDataSource } from '../mocks';
 import { AlertmanagerProvider } from '../state/AlertmanagerContext';
+import { grantPermissionsHelper } from '../test/test-utils';
 import { setupDataSources } from '../testSetup/datasources';
 import { DataSourceType, GRAFANA_RULES_SOURCE_NAME } from '../utils/datasource';
+import * as misc from '../utils/misc';
 
 import {
   AlertRuleAction,
   AlertmanagerAction,
+  EnrichmentAction,
   useAlertmanagerAbilities,
   useAlertmanagerAbility,
   useAllAlertRuleAbilities,
   useAllAlertmanagerAbilities,
+  useEnrichmentAbilities,
+  useEnrichmentAbility,
 } from './useAbilities';
 
 /**
@@ -86,7 +96,7 @@ describe('alertmanager abilities', () => {
   it('should report everything except exporting for Mimir alertmanager', () => {
     setupDataSources(
       mockDataSource<AlertManagerDataSourceJsonData>({
-        name: 'mimir',
+        name: MIMIR_DATASOURCE_UID,
         type: DataSourceType.Alertmanager,
         jsonData: {
           implementation: AlertManagerImplementation.mimir,
@@ -135,6 +145,86 @@ describe('alertmanager abilities', () => {
     expect(result.current[1]).toStrictEqual([true, false]);
     expect(result.current[2]).toStrictEqual([true, true]);
   });
+});
+
+describe('notification policy abilities — K8s-scoped permissions', () => {
+  const setupGrafanaAlertmanager = () =>
+    setupDataSources(
+      mockDataSource<AlertManagerDataSourceJsonData>({
+        name: GRAFANA_RULES_SOURCE_NAME,
+        type: DataSourceType.Alertmanager,
+      })
+    );
+
+  const renderAbility = (action: AlertmanagerAction) =>
+    renderHook(() => useAlertmanagerAbility(action), {
+      wrapper: createAlertmanagerWrapper(GRAFANA_RULES_SOURCE_NAME),
+    });
+
+  it('ViewNotificationPolicyTree: allows access with only ActionAlertingManagedRoutesRead', () => {
+    setupGrafanaAlertmanager();
+    grantUserPermissions([AccessControlAction.ActionAlertingManagedRoutesRead]);
+
+    const { result } = renderAbility(AlertmanagerAction.ViewNotificationPolicyTree);
+    const [supported, allowed] = result.current;
+
+    expect(supported).toBe(true);
+    expect(allowed).toBe(true);
+  });
+
+  it('CreateNotificationPolicy: allows access with only ActionAlertingManagedRoutesCreate', () => {
+    setupGrafanaAlertmanager();
+    grantUserPermissions([AccessControlAction.ActionAlertingManagedRoutesCreate]);
+
+    const { result } = renderAbility(AlertmanagerAction.CreateNotificationPolicy);
+    const [supported, allowed] = result.current;
+
+    expect(supported).toBe(true);
+    expect(allowed).toBe(true);
+  });
+
+  it('UpdateNotificationPolicyTree: allows access with only ActionAlertingManagedRoutesWrite', () => {
+    setupGrafanaAlertmanager();
+    grantUserPermissions([AccessControlAction.ActionAlertingManagedRoutesWrite]);
+
+    const { result } = renderAbility(AlertmanagerAction.UpdateNotificationPolicyTree);
+    const [supported, allowed] = result.current;
+
+    expect(supported).toBe(true);
+    expect(allowed).toBe(true);
+  });
+
+  it('DeleteNotificationPolicy: allows access with only ActionAlertingManagedRoutesDelete', () => {
+    setupGrafanaAlertmanager();
+    grantUserPermissions([AccessControlAction.ActionAlertingManagedRoutesDelete]);
+
+    const { result } = renderAbility(AlertmanagerAction.DeleteNotificationPolicy);
+    const [supported, allowed] = result.current;
+
+    expect(supported).toBe(true);
+    expect(allowed).toBe(true);
+  });
+
+  it.each([
+    [AlertmanagerAction.ViewNotificationPolicyTree, AccessControlAction.AlertingNotificationsRead],
+    [AlertmanagerAction.ViewNotificationPolicyTree, AccessControlAction.AlertingRoutesRead],
+    // For write actions, alert.notifications.routes:write (not alert.notifications:write) is the
+    // correct standalone permission — it must be included in PERMISSIONS_NOTIFICATION_POLICIES to
+    // make the Grafana alertmanager available in getAlertManagerDataSourcesByPermission.
+    [AlertmanagerAction.CreateNotificationPolicy, AccessControlAction.AlertingRoutesWrite],
+    [AlertmanagerAction.UpdateNotificationPolicyTree, AccessControlAction.AlertingRoutesWrite],
+    [AlertmanagerAction.DeleteNotificationPolicy, AccessControlAction.AlertingRoutesWrite],
+  ] as const)(
+    '%s is still allowed with legacy permission %s',
+    (action: AlertmanagerAction, permission: AccessControlAction) => {
+      setupGrafanaAlertmanager();
+      grantUserPermissions([permission]);
+
+      const { result } = renderAbility(action);
+      const [, allowed] = result.current;
+      expect(allowed).toBe(true);
+    }
+  );
 });
 
 setupMswServer();
@@ -197,7 +287,10 @@ describe('AlertRule abilities', () => {
   });
 
   it('should report no permissions while we are loading data for cloud rule', async () => {
-    const rule = getCloudRule();
+    const mimirDs = mockDataSource({ uid: 'mimir', name: 'Mimir' });
+    setupDataSources(mimirDs);
+
+    const rule = getCloudRule({}, { rulesSource: mimirDs });
 
     const { result } = renderHook(() => useAllAlertRuleAbilities(rule), { wrapper: wrapper() });
 
@@ -206,6 +299,148 @@ describe('AlertRule abilities', () => {
     });
 
     expect(result.current).toMatchSnapshot();
+  });
+
+  it('should allow editing/deleting rules with plugin origin label when plugin is not installed', async () => {
+    // Create a rule with a plugin origin label for a plugin that doesn't exist
+    const rule = getGrafanaRule({
+      labels: { __grafana_origin: 'plugin/non-existent-plugin' },
+    });
+
+    const { result } = renderHook(() => useAllAlertRuleAbilities(rule), { wrapper: wrapper() });
+
+    await waitFor(() => {
+      // Wait for the abilities to settle - update should be supported (not loading)
+      const [updateSupported] = result.current[AlertRuleAction.Update];
+      expect(updateSupported).toBe(true);
+    });
+
+    // When plugin is not installed, these actions should be supported
+    const [updateSupported] = result.current[AlertRuleAction.Update];
+    const [deleteSupported] = result.current[AlertRuleAction.Delete];
+
+    expect(updateSupported).toBe(true);
+    expect(deleteSupported).toBe(true);
+  });
+});
+
+describe('enrichment abilities', () => {
+  setupMswServer();
+
+  const originalFeatureToggle = config.featureToggles.alertEnrichment;
+
+  beforeEach(() => {
+    // Default to feature toggle enabled
+    config.featureToggles.alertEnrichment = true;
+  });
+
+  afterEach(() => {
+    config.featureToggles.alertEnrichment = originalFeatureToggle;
+  });
+
+  it('should grant read and write permissions to admin users when feature is enabled', () => {
+    grantPermissionsHelper([]);
+    jest.spyOn(misc, 'isAdmin').mockReturnValue(true);
+
+    const { result } = renderHook(() => useEnrichmentAbilities(), { wrapper: wrapper() });
+
+    const [readSupported, readAllowed] = result.current[EnrichmentAction.Read];
+    const [writeSupported, writeAllowed] = result.current[EnrichmentAction.Write];
+
+    expect(readSupported).toBe(true);
+    expect(readAllowed).toBe(true);
+    expect(writeSupported).toBe(true);
+    expect(writeAllowed).toBe(true);
+  });
+
+  it('should grant read permission when user has enrichments:read permission', () => {
+    jest.spyOn(misc, 'isAdmin').mockReturnValue(false);
+    grantPermissionsHelper([AccessControlAction.AlertingEnrichmentsRead]);
+
+    const { result } = renderHook(() => useEnrichmentAbilities(), { wrapper: wrapper() });
+
+    const [readSupported, readAllowed] = result.current[EnrichmentAction.Read];
+    const [writeSupported, writeAllowed] = result.current[EnrichmentAction.Write];
+
+    expect(readSupported).toBe(true);
+    expect(readAllowed).toBe(true);
+    expect(writeSupported).toBe(true);
+    expect(writeAllowed).toBe(false);
+  });
+
+  it('should grant write permission when user has enrichments:write permission', () => {
+    jest.spyOn(misc, 'isAdmin').mockReturnValue(false);
+    grantPermissionsHelper([AccessControlAction.AlertingEnrichmentsWrite]);
+
+    const { result } = renderHook(() => useEnrichmentAbilities(), { wrapper: wrapper() });
+
+    const [readSupported, readAllowed] = result.current[EnrichmentAction.Read];
+    const [writeSupported, writeAllowed] = result.current[EnrichmentAction.Write];
+
+    expect(readSupported).toBe(true);
+    expect(readAllowed).toBe(false);
+    expect(writeSupported).toBe(true);
+    expect(writeAllowed).toBe(true);
+  });
+
+  it('should grant both read and write permissions when user has both permissions', () => {
+    jest.spyOn(misc, 'isAdmin').mockReturnValue(false);
+    grantPermissionsHelper([AccessControlAction.AlertingEnrichmentsRead, AccessControlAction.AlertingEnrichmentsWrite]);
+
+    const { result } = renderHook(() => useEnrichmentAbilities(), { wrapper: wrapper() });
+
+    const [readSupported, readAllowed] = result.current[EnrichmentAction.Read];
+    const [writeSupported, writeAllowed] = result.current[EnrichmentAction.Write];
+
+    expect(readSupported).toBe(true);
+    expect(readAllowed).toBe(true);
+    expect(writeSupported).toBe(true);
+    expect(writeAllowed).toBe(true);
+  });
+
+  it('should deny all permissions when user is not admin and has no permissions', () => {
+    jest.spyOn(misc, 'isAdmin').mockReturnValue(false);
+    grantPermissionsHelper([]);
+
+    const { result } = renderHook(() => useEnrichmentAbilities(), { wrapper: wrapper() });
+
+    const [readSupported, readAllowed] = result.current[EnrichmentAction.Read];
+    const [writeSupported, writeAllowed] = result.current[EnrichmentAction.Write];
+
+    expect(readSupported).toBe(true);
+    expect(readAllowed).toBe(false);
+    expect(writeSupported).toBe(true);
+    expect(writeAllowed).toBe(false);
+  });
+
+  it('should return correct ability for specific action using useEnrichmentAbility', () => {
+    jest.spyOn(misc, 'isAdmin').mockReturnValue(false);
+    grantPermissionsHelper([AccessControlAction.AlertingEnrichmentsRead]);
+
+    const { result } = renderHook(() => useEnrichmentAbility(EnrichmentAction.Read), { wrapper: wrapper() });
+
+    const [supported, allowed] = result.current;
+
+    expect(supported).toBe(true);
+    expect(allowed).toBe(true);
+  });
+
+  it('should report enrichments as not supported when feature toggle is disabled', () => {
+    config.featureToggles.alertEnrichment = false;
+    jest.spyOn(misc, 'isAdmin').mockReturnValue(true);
+    grantPermissionsHelper([AccessControlAction.AlertingEnrichmentsRead, AccessControlAction.AlertingEnrichmentsWrite]);
+
+    const { result } = renderHook(() => useEnrichmentAbilities(), { wrapper: wrapper() });
+
+    const [readSupported, readAllowed] = result.current[EnrichmentAction.Read];
+    const [writeSupported, writeAllowed] = result.current[EnrichmentAction.Write];
+
+    // Enrichments not supported when feature toggle is off
+    expect(readSupported).toBe(false);
+    expect(writeSupported).toBe(false);
+    // Permissions would be granted if it were supported
+    expect(readAllowed).toBe(true);
+    expect(writeAllowed).toBe(true);
   });
 });
 

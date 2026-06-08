@@ -2,33 +2,32 @@ import { css } from '@emotion/css';
 import { localPoint } from '@visx/event';
 import { RadialGradient } from '@visx/gradient';
 import { Group } from '@visx/group';
-import Pie, { PieArcDatum, ProvidedProps } from '@visx/shape/lib/shapes/Pie';
+import Pie, { type PieArcDatum, type ProvidedProps } from '@visx/shape/lib/shapes/Pie';
 import { useTooltip, useTooltipInPortal } from '@visx/tooltip';
-import { UseTooltipParams } from '@visx/tooltip/lib/hooks/useTooltip';
+import { type UseTooltipParams } from '@visx/tooltip/lib/hooks/useTooltip';
 import { useCallback } from 'react';
 import * as React from 'react';
 import tinycolor from 'tinycolor2';
 
 import {
-  FieldDisplay,
+  type FieldDisplay,
   FALLBACK_COLOR,
   formattedValueToString,
-  GrafanaTheme2,
+  type GrafanaTheme2,
   DataHoverClearEvent,
   DataHoverEvent,
 } from '@grafana/data';
 import { selectors } from '@grafana/e2e-selectors';
-import { VizTooltipOptions } from '@grafana/schema';
+import { type SortOrder, type VizTooltipOptions } from '@grafana/schema';
 import {
   useTheme2,
   useStyles2,
-  SeriesTableRowProps,
+  type SeriesTableRowProps,
   DataLinksContextMenu,
   SeriesTable,
   usePanelContext,
 } from '@grafana/ui';
-import { getTooltipContainerStyles } from '@grafana/ui/src/themes/mixins';
-import { useComponentInstanceId } from '@grafana/ui/src/utils/useComponetInstanceId';
+import { getTooltipContainerStyles, useComponentInstanceId } from '@grafana/ui/internal';
 
 import { PieChartType, PieChartLabels } from './panelcfg.gen';
 import { filterDisplayItems, sumDisplayItemsReducer } from './utils';
@@ -41,6 +40,7 @@ interface PieChartProps {
   width: number;
   fieldDisplayValues: FieldDisplay[];
   pieType: PieChartType;
+  sort: SortOrder;
   highlightedTitle?: string;
   displayLabels?: PieChartLabels[];
   useGradients?: boolean; // not used?
@@ -50,6 +50,7 @@ interface PieChartProps {
 export const PieChart = ({
   fieldDisplayValues,
   pieType,
+  sort,
   width,
   height,
   highlightedTitle,
@@ -106,6 +107,7 @@ export const PieChart = ({
           <Pie
             data={filteredFieldDisplayValues}
             pieValue={getValue}
+            pieSortValues={() => 0}
             outerRadius={layout.outerRadius}
             innerRadius={layout.innerRadius}
             cornerRadius={3}
@@ -321,8 +323,12 @@ function getTooltipData(
   if (tooltipOptions.mode === 'multi') {
     return pie.arcs
       .filter((pa) => {
-        const field = pa.data.field;
-        return field && !field.custom?.hideFrom?.tooltip && !field.custom?.hideFrom?.viz;
+        if (tooltipOptions.hideZeros && pa.value === 0) {
+          return false;
+        }
+
+        const customConfig = pa.data.field.custom;
+        return !customConfig?.hideFrom?.tooltip;
       })
       .map((pieArc) => {
         return {

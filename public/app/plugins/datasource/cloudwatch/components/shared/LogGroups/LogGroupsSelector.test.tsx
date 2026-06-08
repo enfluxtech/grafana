@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import lodash from 'lodash';
 import selectEvent from 'react-select-event';
 
-import { ResourceResponse, LogGroupResponse } from '../../../resources/types';
+import { type ResourceResponse, type LogGroupResponse } from '../../../resources/types';
 
 import { LogGroupsSelector } from './LogGroupsSelector';
 
@@ -284,7 +284,7 @@ describe('LogGroupsSelector', () => {
       />
     );
     await userEvent.click(screen.getByText('Select log groups'));
-    await userEvent.click(screen.getByRole('button', { name: 'select-clear-value' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear value' }));
     await userEvent.click(screen.getByText('Add log groups'));
     expect(onChange).toHaveBeenCalledWith([
       {

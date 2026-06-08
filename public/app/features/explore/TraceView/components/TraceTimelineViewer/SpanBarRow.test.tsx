@@ -17,9 +17,10 @@ import userEvent from '@testing-library/user-event';
 
 import { DURATION, NONE, TAG } from '@grafana/o11y-ds-frontend';
 
-import { SpanLinkDef, TraceSpan } from '../types';
+import { type SpanLinkDef } from '../types/links';
+import { type TraceSpan } from '../types/trace';
 
-import SpanBarRow, { SpanBarRowProps } from './SpanBarRow';
+import SpanBarRow, { type SpanBarRowProps } from './SpanBarRow';
 
 describe('<SpanBarRow>', () => {
   const spanID = 'some-id';

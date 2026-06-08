@@ -1,33 +1,33 @@
-import { SpanStatus } from '@opentelemetry/api';
-import { collectorTypes } from '@opentelemetry/exporter-collector';
+import { type SpanStatus } from '@opentelemetry/api';
+import { type collectorTypes } from '@opentelemetry/exporter-collector';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+import { isEqual } from 'lodash';
 
 import {
   createDataFrame,
   createTheme,
-  DataFrame,
-  DataLink,
+  type DataFrame,
+  type DataLink,
   DataLinkConfigOrigin,
-  DataQueryResponse,
-  DataSourceInstanceSettings,
-  DataSourceJsonData,
-  Field,
-  FieldDTO,
+  type DataQueryResponse,
+  type DataSourceInstanceSettings,
+  type DataSourceJsonData,
+  type Field,
+  type FieldDTO,
   FieldType,
   getDisplayProcessor,
   MutableDataFrame,
   toDataFrame,
-  TraceKeyValuePair,
-  TraceLog,
-  TraceSpanReference,
-  TraceSpanRow,
+  type TraceKeyValuePair,
+  type TraceLog,
+  type TraceSpanReference,
+  type TraceSpanRow,
 } from '@grafana/data';
-import { TraceToProfilesData } from '@grafana/o11y-ds-frontend';
+import { createNodeGraphFrames, type TraceToProfilesData } from '@grafana/o11y-ds-frontend';
 import { getDataSourceSrv } from '@grafana/runtime';
 
 import { SearchTableType } from './dataquery.gen';
-import { createGraphFrames } from './graphTransform';
-import { Span, SpanAttributes, Spanset, TempoJsonData, TraceSearchMetadata } from './types';
+import { type Span, type SpanAttributes, type Spanset, type TempoJsonData, type TraceSearchMetadata } from './types';
 
 function getAttributeValue(value: collectorTypes.opentelemetryProto.common.v1.AnyValue): any {
   if (value.stringValue) {
@@ -60,18 +60,23 @@ function getAttributeValue(value: collectorTypes.opentelemetryProto.common.v1.An
 function resourceToProcess(resource: collectorTypes.opentelemetryProto.resource.v1.Resource | undefined) {
   const serviceTags: TraceKeyValuePair[] = [];
   let serviceName = 'OTLPResourceNoServiceName';
+  let serviceNamespace: string | undefined;
   if (!resource) {
-    return { serviceName, serviceTags };
+    return { serviceName, serviceNamespace, serviceTags };
   }
 
   for (const attribute of resource.attributes) {
     if (attribute.key === SemanticResourceAttributes.SERVICE_NAME) {
       serviceName = attribute.value.stringValue || serviceName;
     }
+    // Coalesce service.namespace (OTel semconv canonical) and service.namespace.name (alternative)
+    if (attribute.key === 'service.namespace' || attribute.key === 'service.namespace.name') {
+      serviceNamespace = serviceNamespace ?? attribute.value.stringValue ?? undefined;
+    }
     serviceTags.push({ key: attribute.key, value: getAttributeValue(attribute.value) });
   }
 
-  return { serviceName, serviceTags };
+  return { serviceName, serviceNamespace, serviceTags };
 }
 
 function getSpanTags(span: collectorTypes.opentelemetryProto.trace.v1.Span): TraceKeyValuePair[] {
@@ -141,6 +146,7 @@ export function transformFromOTLP(
       { name: 'parentSpanID', type: FieldType.string, values: [] },
       { name: 'operationName', type: FieldType.string, values: [] },
       { name: 'serviceName', type: FieldType.string, values: [] },
+      { name: 'serviceNamespace', type: FieldType.string, values: [] },
       { name: 'kind', type: FieldType.string, values: [] },
       { name: 'statusCode', type: FieldType.number, values: [] },
       { name: 'statusMessage', type: FieldType.string, values: [] },
@@ -163,15 +169,16 @@ export function transformFromOTLP(
   });
   try {
     for (const data of traceData) {
-      const { serviceName, serviceTags } = resourceToProcess(data.resource);
+      const { serviceName, serviceNamespace, serviceTags } = resourceToProcess(data.resource);
       for (const librarySpan of data.instrumentationLibrarySpans) {
         for (const span of librarySpan.spans) {
           frame.add({
-            traceID: span.traceId.length > 16 ? span.traceId.slice(16) : span.traceId,
+            traceID: span.traceId,
             spanID: span.spanId,
             parentSpanID: span.parentSpanId || '',
             operationName: span.name || '',
             serviceName,
+            serviceNamespace,
             kind: getSpanKind(span),
             statusCode: span.status?.code,
             statusMessage: span.status?.message,
@@ -195,7 +202,7 @@ export function transformFromOTLP(
 
   let data = [frame];
   if (nodeGraph) {
-    data.push(...(createGraphFrames(frame) as MutableDataFrame[]));
+    data.push(...(createNodeGraphFrames(frame) as MutableDataFrame[]));
   }
 
   return { data };
@@ -446,7 +453,7 @@ export function transformTrace(
 
   let data = [...response.data];
   if (nodeGraph) {
-    data.push(...createGraphFrames(toDataFrame(frame)));
+    data.push(...createNodeGraphFrames(toDataFrame(frame)));
   }
 
   return {
@@ -463,6 +470,53 @@ function transformToTraceData(data: TraceSearchMetadata) {
     traceService: data.rootServiceName || '',
     traceName: data.rootTraceName || '',
   };
+}
+
+export function enhanceTraceQlMetricsResponse(
+  data: DataQueryResponse,
+  instanceSettings: DataSourceInstanceSettings
+): DataQueryResponse {
+  data.data
+    ?.filter((f) => f.name === 'exemplar' && f.meta?.dataTopic === 'annotations')
+    .map((frame) => {
+      const traceIDField = frame.fields.find((field: Field) => field.name === 'traceId');
+      if (traceIDField) {
+        const links = getDataLinks(instanceSettings);
+        const existingLinks = traceIDField.config.links || [];
+
+        // Filter out links that already exist
+        const newLinks = links.filter(
+          (link) =>
+            !existingLinks.some(
+              (existing: DataLink) =>
+                existing.title === link.title &&
+                existing.internal?.datasourceUid === link.internal?.datasourceUid &&
+                isEqual(existing.internal?.query, link.internal?.query)
+            )
+        );
+
+        traceIDField.config.links = existingLinks.length ? [...existingLinks, ...newLinks] : newLinks;
+      }
+      return frame;
+    });
+  return data;
+}
+
+function getDataLinks(instanceSettings: DataSourceInstanceSettings): DataLink[] {
+  const dataLinks: DataLink[] = [];
+
+  if (instanceSettings.uid) {
+    dataLinks.push({
+      title: 'View trace',
+      url: '',
+      internal: {
+        query: { query: '${__value.raw}', queryType: 'traceql' },
+        datasourceUid: instanceSettings.uid,
+        datasourceName: instanceSettings?.name ?? 'Data source not found',
+      },
+    });
+  }
+  return dataLinks;
 }
 
 export function formatTraceQLResponse(
@@ -864,7 +918,7 @@ const traceSubFrame = (
     subFrame.add(transformSpanToTraceData(span, spanSet, trace));
   });
 
-  return subFrame;
+  return toDataFrame(subFrame);
 };
 
 interface TraceTableData {

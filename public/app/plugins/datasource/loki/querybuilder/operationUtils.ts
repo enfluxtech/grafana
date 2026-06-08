@@ -2,19 +2,19 @@ import { capitalize } from 'lodash';
 import pluralize from 'pluralize';
 
 import {
-  QueryBuilderOperation,
-  QueryBuilderOperationDefinition,
-  QueryBuilderOperationParamDef,
-  QueryBuilderOperationParamValue,
-  VisualQuery,
-  VisualQueryModeller,
-} from '@grafana/experimental';
+  type QueryBuilderOperation,
+  type QueryBuilderOperationDefinition,
+  type QueryBuilderOperationParamDef,
+  type QueryBuilderOperationParamValue,
+  type VisualQuery,
+  type VisualQueryModeller,
+} from '@grafana/plugin-ui';
 
 import { escapeLabelValueInExactSelector } from '../languageUtils';
 import { FUNCTIONS } from '../syntax';
 
 import { LabelParamEditor } from './components/LabelParamEditor';
-import { LokiOperationId, LokiOperationOrder, LokiVisualQuery, LokiVisualQueryOperationCategory } from './types';
+import { LokiOperationId, LokiOperationOrder, type LokiVisualQuery, LokiVisualQueryOperationCategory } from './types';
 
 export function createRangeOperation(
   name: string,
@@ -336,11 +336,14 @@ export function getLineFilterRenderer(operation: string, caseInsensitive?: boole
     return `${innerExpr} ${operation} ${delimiter}${params.join(`${delimiter} or ${delimiter}`)}${delimiter}`;
   };
 }
+
 function getRangeVectorParamDef(): QueryBuilderOperationParamDef {
   return {
     name: 'Range',
     type: 'string',
-    options: ['$__auto', '1m', '5m', '10m', '1h', '24h'],
+    options: ['$__auto'],
+    description:
+      'Use the default value "$__auto". Change the "step" value in the query options to change the bucket size.',
   };
 }
 

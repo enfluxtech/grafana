@@ -2,13 +2,13 @@ import { css } from '@emotion/css';
 import { fromPairs } from 'lodash';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAsyncFn, useMount, useMountedState } from 'react-use';
-import { AsyncState } from 'react-use/lib/useAsyncFn';
+import { type AsyncState } from 'react-use/lib/useAsyncFn';
 
-import { GrafanaTheme2, QueryEditorProps } from '@grafana/data';
+import { type GrafanaTheme2, type QueryEditorProps } from '@grafana/data';
 import { TemporaryAlert } from '@grafana/o11y-ds-frontend';
 import {
   ButtonCascader,
-  CascaderOption,
+  type CascaderOption,
   FileDropzone,
   InlineField,
   InlineFieldRow,
@@ -17,12 +17,12 @@ import {
   QueryField,
   useStyles2,
   Modal,
-  HorizontalGroup,
+  Stack,
   Button,
 } from '@grafana/ui';
 
-import { ZipkinDatasource } from './datasource';
-import { ZipkinQuery, ZipkinQueryType, ZipkinSpan } from './types';
+import { type ZipkinDatasource } from './datasource';
+import { type ZipkinQuery, type ZipkinQueryType, type ZipkinSpan } from './types';
 
 type Props = QueryEditorProps<ZipkinDatasource, ZipkinQuery>;
 
@@ -90,7 +90,7 @@ export const ZipkinQueryField = ({ query, onChange, onRunQuery, datasource }: Pr
       </Modal>
       <InlineFieldRow>
         <InlineField label="Query type" grow={true}>
-          <HorizontalGroup spacing={'sm'} align={'center'} justify={'space-between'}>
+          <Stack gap={1} alignItems="center" justifyContent="space-between">
             <RadioButtonGroup<ZipkinQueryType>
               options={[{ value: 'traceID', label: 'TraceID' }]}
               value={query.queryType || 'traceID'}
@@ -111,7 +111,7 @@ export const ZipkinQueryField = ({ query, onChange, onRunQuery, datasource }: Pr
             >
               Import trace
             </Button>
-          </HorizontalGroup>
+          </Stack>
         </InlineField>
       </InlineFieldRow>
       {query.queryType === 'traceID' && (

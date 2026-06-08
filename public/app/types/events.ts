@@ -1,5 +1,5 @@
-import { AnnotationQuery, BusEventBase, BusEventWithPayload, eventFactory } from '@grafana/data';
-import { IconName, ButtonVariant } from '@grafana/ui';
+import { type AnnotationQuery, BusEventBase, BusEventWithPayload, eventFactory } from '@grafana/data';
+import { type ButtonVariant } from '@grafana/ui';
 
 /**
  * Event Payloads
@@ -27,6 +27,18 @@ export interface ShowModalReactPayload {
   props?: any;
 }
 
+export interface OpenExtensionSidebarPayload {
+  props?: Record<string, unknown>;
+  pluginId: string;
+  componentTitle: string;
+}
+
+export interface ToggleExtensionSidebarPayload {
+  props?: Record<string, unknown>;
+  pluginId: string;
+  componentTitle: string;
+}
+
 export interface ShowConfirmModalPayload {
   title?: string;
   text?: string;
@@ -36,7 +48,6 @@ export interface ShowConfirmModalPayload {
   altActionText?: string;
   yesText?: string;
   noText?: string;
-  icon?: IconName;
   yesButtonVariant?: ButtonVariant;
 
   onDismiss?: () => void;
@@ -46,17 +57,6 @@ export interface ShowConfirmModalPayload {
 
 export interface ToggleKioskModePayload {
   exit?: boolean;
-}
-
-export interface GraphClickedPayload {
-  pos: any;
-  panel: any;
-  item: any;
-}
-
-export interface ThresholdChangedPayload {
-  threshold: any;
-  handleIndex: number;
 }
 
 export interface DashScrollPayload {
@@ -72,12 +72,6 @@ export interface PanelChangeViewPayload {}
  */
 
 export const templateVariableValueUpdated = eventFactory('template-variable-value-updated');
-export const graphClicked = eventFactory<GraphClickedPayload>('graph-click');
-
-/**
- * @internal
- */
-export const thresholdChanged = eventFactory<ThresholdChangedPayload>('threshold-changed');
 
 /**
  * Used for syncing queries badge count in panel edit queries tab
@@ -164,6 +158,10 @@ export class AbsoluteTimeEvent extends BusEventWithPayload<AbsoluteTimeEventPayl
   static type = 'absolute-time';
 }
 
+export class RunQueriesEvent extends BusEventBase {
+  static type = 'run-queries';
+}
+
 export class RemovePanelEvent extends BusEventWithPayload<number> {
   static type = 'remove-panel';
 }
@@ -183,6 +181,18 @@ export class ShowModalReactEvent extends BusEventWithPayload<ShowModalReactPaylo
   static type = 'show-react-modal';
 }
 
+export class OpenExtensionSidebarEvent extends BusEventWithPayload<OpenExtensionSidebarPayload> {
+  static type = 'open-extension-sidebar';
+}
+
+export class CloseExtensionSidebarEvent extends BusEventBase {
+  static type = 'close-extension-sidebar';
+}
+
+export class ToggleExtensionSidebarEvent extends BusEventWithPayload<ToggleExtensionSidebarPayload> {
+  static type = 'toggle-extension-sidebar';
+}
+
 /**
  * @deprecated use ShowModalReactEvent instead that has this capability built in
  */
@@ -192,6 +202,10 @@ export class HideModalEvent extends BusEventBase {
 
 export class DashboardSavedEvent extends BusEventBase {
   static type = 'dashboard-saved';
+}
+
+export class DashboardDiscardedEvent extends BusEventBase {
+  static type = 'dashboard-discarded';
 }
 
 export class AnnotationQueryStarted extends BusEventWithPayload<AnnotationQuery> {

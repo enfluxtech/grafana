@@ -1,7 +1,6 @@
-import { HttpResponse, http } from 'msw';
+import { type DefaultBodyType, HttpResponse, type HttpResponseResolver, type PathParams, http } from 'msw';
 
-import { config } from '@grafana/runtime';
-import server, { mockFeatureDiscoveryApi } from 'app/features/alerting/unified/mockApi';
+import server from '@grafana/test-utils/server';
 import { mockDataSource, mockFolder } from 'app/features/alerting/unified/mocks';
 import {
   getAlertmanagerConfigHandler,
@@ -10,25 +9,37 @@ import {
 } from 'app/features/alerting/unified/mocks/server/handlers/alertmanagers';
 import { getFolderHandler } from 'app/features/alerting/unified/mocks/server/handlers/folders';
 import { listNamespacedTimeIntervalHandler } from 'app/features/alerting/unified/mocks/server/handlers/k8s/timeIntervals.k8s';
+import { getDisabledPluginHandler } from 'app/features/alerting/unified/mocks/server/handlers/plugins';
 import {
-  getDisabledPluginHandler,
-  getPluginMissingHandler,
-} from 'app/features/alerting/unified/mocks/server/handlers/plugins';
-import { SupportedPlugin } from 'app/features/alerting/unified/types/pluginBridges';
+  ALERTING_API_SERVER_BASE_URL,
+  getK8sResponse,
+  paginatedHandlerFor,
+} from 'app/features/alerting/unified/mocks/server/utils';
+import { type SupportedPlugin } from 'app/features/alerting/unified/types/pluginBridges';
 import { clearPluginSettingsCache } from 'app/features/plugins/pluginSettings';
-import { AlertmanagerChoice } from 'app/plugins/datasource/alertmanager/types';
-import { FolderDTO } from 'app/types';
+import {
+  type AlertmanagerAlert,
+  type AlertmanagerChoice,
+  type Silence,
+} from 'app/plugins/datasource/alertmanager/types';
+import { type FolderDTO } from 'app/types/folders';
+import { type RulerDataSourceConfig } from 'app/types/unified-alerting';
+import {
+  type GrafanaPromRuleGroupDTO,
+  type PromRuleGroupDTO,
+  type RulerRuleGroupDTO,
+} from 'app/types/unified-alerting-dto';
 
 import { setupDataSources } from '../../testSetup/datasources';
-import { buildInfoResponse } from '../../testSetup/featureDiscovery';
 import { DataSourceType } from '../../utils/datasource';
+import { type ApiMachineryError } from '../../utils/k8s/errors';
 
 import { MIMIR_DATASOURCE_UID } from './constants';
 import { rulerRuleGroupHandler, updateRulerRuleNamespaceHandler } from './handlers/grafanaRuler';
 
 export type HandlerOptions = {
   delay?: number;
-  response?: HttpResponse;
+  response?: HttpResponse<DefaultBodyType>;
 };
 
 /**
@@ -58,6 +69,39 @@ export const setFolderResponse = (response: Partial<FolderDTO>) => {
   server.use(handler);
 };
 
+export const setUpdateGrafanaRulerRuleNamespaceResolver = (
+  resolver: HttpResponseResolver<{ folderUid: string }, RulerRuleGroupDTO, undefined>
+) => {
+  server.use(
+    http.post<{ folderUid: string }, RulerRuleGroupDTO, undefined>(
+      `/api/ruler/grafana/api/v1/rules/:folderUid`,
+      resolver
+    )
+  );
+};
+
+export const setUpdateRulerRuleNamespaceResolver = (
+  resolver: HttpResponseResolver<{ dataSourceUid: string; namespace: string }, RulerRuleGroupDTO, undefined>
+) => {
+  server.use(
+    http.post<{ dataSourceUid: string; namespace: string }, RulerRuleGroupDTO, undefined>(
+      `/api/ruler/:dataSourceUid/api/v1/rules/:namespace`,
+      resolver
+    )
+  );
+};
+
+export const setDeleteRulerRuleNamespaceResolver = (
+  resolver: HttpResponseResolver<{ dataSourceUid: string; namespace: string; groupName: string }, undefined, undefined>
+) => {
+  server.use(
+    http.delete<{ dataSourceUid: string; namespace: string; groupName: string }, undefined, undefined>(
+      `/api/ruler/:dataSourceUid/api/v1/rules/:namespace/:groupName`,
+      resolver
+    )
+  );
+};
+
 /**
  * Makes the mock server respond with different responses for updating a ruler namespace
  */
@@ -66,6 +110,32 @@ export const setUpdateRulerRuleNamespaceHandler = (options?: HandlerOptions) => 
   server.use(handler);
 
   return handler;
+};
+
+export const setGrafanaRulerRuleGroupResolver = (
+  resolver: HttpResponseResolver<{ folderUid: string; groupName: string }, RulerRuleGroupDTO, undefined>
+) => {
+  server.use(
+    http.get<{ folderUid: string; groupName: string }, RulerRuleGroupDTO, undefined>(
+      `/api/ruler/grafana/api/v1/rules/:folderUid/:groupName`,
+      resolver
+    )
+  );
+};
+
+export const setRulerRuleGroupResolver = (
+  resolver: HttpResponseResolver<
+    { dataSourceUid: string; namespace: string; groupName: string },
+    RulerRuleGroupDTO,
+    undefined
+  >
+) => {
+  server.use(
+    http.get<{ dataSourceUid: string; namespace: string; groupName: string }, RulerRuleGroupDTO, undefined>(
+      `/api/ruler/:dataSourceUid/api/v1/rules/:namespace/:groupName`,
+      resolver
+    )
+  );
 };
 
 /**
@@ -78,6 +148,11 @@ export const setRulerRuleGroupHandler = (options?: HandlerOptions) => {
   return handler;
 };
 
+export const setGrafanaRuleGroupExportResolver = (
+  resolver: HttpResponseResolver<PathParams<never>, string, undefined>
+) => {
+  server.use(http.get('/api/ruler/grafana/api/v1/export/rules', resolver));
+};
 /**
  * Makes the mock server respond with an error when fetching list of mute timings
  */
@@ -91,30 +166,115 @@ export const setMuteTimingsListError = () => {
   return handler;
 };
 
+/**
+ * Makes the mock server respond with no time intervals
+ */
+export const setTimeIntervalsListEmpty = () => {
+  const listMuteTimingsPath = listNamespacedTimeIntervalHandler().info.path;
+  const handler = http.get(listMuteTimingsPath, () => {
+    return HttpResponse.json(getK8sResponse('TimeIntervalList', []));
+  });
+
+  server.use(handler);
+  return handler;
+};
+
+interface TimeIntervalConfig {
+  name: string;
+  provenance?: string;
+  canUse?: boolean;
+}
+
+/**
+ * Makes the mock server respond with custom time intervals
+ */
+export const setTimeIntervalsList = (intervals: TimeIntervalConfig[]) => {
+  const listMuteTimingsPath = listNamespacedTimeIntervalHandler().info.path;
+  const handler = http.get(listMuteTimingsPath, () => {
+    const items = intervals.map((interval) => {
+      // Compute canUse based on provenance if not provided
+      const canUse = interval.canUse ?? interval.provenance !== 'converted_prometheus';
+      return {
+        metadata: {
+          annotations: {
+            'grafana.com/provenance': interval.provenance ?? 'none',
+            'grafana.com/canUse': canUse ? 'true' : 'false',
+          },
+          name: interval.name,
+          uid: `uid-${interval.name}`,
+          namespace: 'default',
+          resourceVersion: 'e0270bfced786660',
+        },
+        spec: { name: interval.name, time_intervals: [] },
+      };
+    });
+    return HttpResponse.json(getK8sResponse('TimeIntervalList', items));
+  });
+
+  server.use(handler);
+  return handler;
+};
+
 export function mimirDataSource() {
   const dataSource = mockDataSource(
     {
       type: DataSourceType.Prometheus,
       name: MIMIR_DATASOURCE_UID,
       uid: MIMIR_DATASOURCE_UID,
-      url: 'https://mimir.local:9000',
       jsonData: {
         manageAlerts: true,
+        implementation: 'mimir',
       },
     },
-    { alerting: true }
+    { alerting: true, module: 'core:plugin/prometheus' }
   );
 
-  setupDataSources(dataSource);
-  mockFeatureDiscoveryApi(server).discoverDsFeatures(dataSource, buildInfoResponse.mimir);
+  const rulerConfig: RulerDataSourceConfig = {
+    apiVersion: 'config',
+    dataSourceUid: dataSource.uid,
+    dataSourceName: dataSource.name,
+  };
 
-  return { dataSource };
+  setupDataSources(dataSource);
+
+  return { dataSource, rulerConfig };
 }
 
-/** Make a given plugin ID respond with a 404, as if it isn't installed at all */
-export const removePlugin = (pluginId: string) => {
-  delete config.apps[pluginId];
-  server.use(getPluginMissingHandler(pluginId));
+interface DataSourceLike {
+  uid: string;
+}
+
+export function setPrometheusRules(ds: DataSourceLike, groups: PromRuleGroupDTO[]) {
+  server.use(http.get(`/api/prometheus/${ds.uid}/api/v1/rules`, paginatedHandlerFor(groups)));
+}
+
+export function setGrafanaPromRules(groups: GrafanaPromRuleGroupDTO[]) {
+  server.use(http.get(`/api/prometheus/grafana/api/v1/rules`, paginatedHandlerFor(groups)));
+}
+
+/**
+ * Makes the mock server respond with a custom resolver for fetching a single silence by ID
+ */
+export const setSilenceGetResolver = (
+  resolver: HttpResponseResolver<{ datasourceUid: string; uuid: string }, Silence, undefined>
+) => {
+  server.use(
+    http.get<{ datasourceUid: string; uuid: string }, Silence, undefined>(
+      '/api/alertmanager/:datasourceUid/api/v2/silence/:uuid',
+      resolver
+    )
+  );
+};
+
+/**
+ * Makes the mock server respond with a specific list of alertmanager alerts
+ */
+export const setAlertmanagerAlertsHandler = (alerts: AlertmanagerAlert[]) => {
+  const handler = http.get('/api/alertmanager/:datasourceUid/api/v2/alerts', () => {
+    return HttpResponse.json(alerts);
+  });
+  server.use(handler);
+  return handler;
 };
 
 /** Make a plugin respond with `enabled: false`, as if its installed but disabled */
@@ -145,4 +305,52 @@ export const makeAllAlertmanagerConfigFetchFail = (
   responseOverride: ReturnType<typeof getErrorResponse> = defaultError
 ) => {
   server.use(getAlertmanagerConfigHandler(responseOverride));
+};
+
+export const makeAllK8sGetEndpointsFail = (
+  uid: string,
+  message = 'could not find an Alertmanager configuration',
+  status = 500
+) => {
+  server.use(
+    http.get(ALERTING_API_SERVER_BASE_URL + '/*', () => {
+      const errorResponse: ApiMachineryError = {
+        kind: 'Status',
+        apiVersion: 'v1',
+        metadata: {},
+        status: 'Failure',
+        details: {
+          uid,
+        },
+        message,
+        code: status,
+        reason: '',
+      };
+      return HttpResponse.json<ApiMachineryError>(errorResponse, { status });
+    })
+  );
+};
+
+export const makeAllK8sEndpointsFail = (
+  uid: string,
+  message = 'could not find an Alertmanager configuration',
+  status = 500
+) => {
+  server.use(
+    http.all(ALERTING_API_SERVER_BASE_URL + '/*', () => {
+      const errorResponse: ApiMachineryError = {
+        kind: 'Status',
+        apiVersion: 'v1',
+        metadata: {},
+        status: 'Failure',
+        details: {
+          uid,
+        },
+        message,
+        code: status,
+        reason: '',
+      };
+      return HttpResponse.json<ApiMachineryError>(errorResponse, { status });
+    })
+  );
 };

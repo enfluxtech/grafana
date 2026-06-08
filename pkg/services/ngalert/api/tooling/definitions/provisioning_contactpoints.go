@@ -10,6 +10,7 @@ import (
 //
 //     Responses:
 //       200: ContactPoints
+//       403: ForbiddenError
 
 // swagger:route GET /v1/provisioning/contact-points/export provisioning stable RouteGetContactpointsExport
 //
@@ -36,6 +37,7 @@ import (
 //     Responses:
 //       202: EmbeddedContactPoint
 //       400: ValidationError
+//       403: ForbiddenError
 
 // swagger:route PUT /v1/provisioning/contact-points/{UID} provisioning stable RoutePutContactpoint
 //
@@ -47,6 +49,7 @@ import (
 //     Responses:
 //       202: Ack
 //       400: ValidationError
+//       403: ForbiddenError
 
 // swagger:route DELETE /v1/provisioning/contact-points/{UID} provisioning stable RouteDeleteContactpoints
 //
@@ -57,6 +60,7 @@ import (
 //
 //     Responses:
 //       202: description: The contact point was deleted successfully.
+//       403: ForbiddenError
 
 // swagger:parameters RoutePutContactpoint RouteDeleteContactpoints
 type ContactPointUIDReference struct {
@@ -106,7 +110,7 @@ type EmbeddedContactPoint struct {
 	Name string `json:"name" binding:"required"`
 	// required: true
 	// example: webhook
-	// enum: alertmanager, dingding, discord, email, googlechat, kafka, line, opsgenie, pagerduty, pushover, sensugo, slack, teams, telegram, threema, victorops, webhook, wecom
+	// enum: alertmanager,dingding,discord,email,googlechat,kafka,line,opsgenie,pagerduty,pushover,sensugo,slack,teams,telegram,threema,victorops,webhook,wecom
 	Type string `json:"type" binding:"required"`
 	// required: true
 	Settings *simplejson.Json `json:"settings" binding:"required"`

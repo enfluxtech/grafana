@@ -6,6 +6,11 @@ export enum FieldColorModeId {
   PaletteClassic = 'palette-classic',
   PaletteClassicByName = 'palette-classic-by-name',
   PaletteSaturated = 'palette-saturated',
+  /**
+   * @alpha - the color blind safe palette is experimental and may be removed or changed
+   * as we work towards a GA of improved color blind support.
+   */
+  PaletteColorblind = 'palette-colorblind',
   ContinuousGrYlRd = 'continuous-GrYlRd',
   ContinuousRdYlGr = 'continuous-RdYlGr',
   ContinuousBlYlRd = 'continuous-BlYlRd',
@@ -16,6 +21,11 @@ export enum FieldColorModeId {
   ContinuousReds = 'continuous-reds',
   ContinuousGreens = 'continuous-greens',
   ContinuousPurples = 'continuous-purples',
+  ContinuousViridis = 'continuous-viridis',
+  ContinuousMagma = 'continuous-magma',
+  ContinuousPlasma = 'continuous-plasma',
+  ContinuousInferno = 'continuous-inferno',
+  ContinuousCividis = 'continuous-cividis',
   Fixed = 'fixed',
   Shades = 'shades',
 }

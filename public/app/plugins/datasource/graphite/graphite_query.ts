@@ -1,13 +1,13 @@
 import { compact, each, findIndex, flatten, get, join, keyBy, last, map, reduce, without } from 'lodash';
 
-import { ScopedVars } from '@grafana/data';
-import { TemplateSrv } from '@grafana/runtime';
-import { arrayMove } from 'app/core/utils/arrayMove';
+import { type ScopedVars } from '@grafana/data';
+import { type TemplateSrv } from '@grafana/runtime';
 
-import { GraphiteDatasource } from './datasource';
-import { FuncInstance } from './gfunc';
-import { AstNode, Parser } from './parser';
-import { GraphiteSegment } from './types';
+import { type GraphiteDatasource } from './datasource';
+import { type FuncInstance } from './gfunc';
+import { type AstNode, Parser } from './parser';
+import { type GraphiteSegment } from './types';
+import { arrayMove } from './utils';
 
 export type GraphiteTagOperator = '=' | '=~' | '!=' | '!=~';
 
@@ -77,6 +77,21 @@ export default class GraphiteQuery {
 
     try {
       this.parseTargetRecursive(astNode, null);
+      if (this.target.target) {
+        const oldQuery = this.target.target;
+        const newQuery = this.generateQueryString();
+
+        // Spaces, quotes, and commas are used when rendering the AST back into a string.
+        // We are removing these for less false positives of query changes.
+        const sanitizeQuery = (o: string): string => o.replace(/\s|'|"|,/g, '');
+        const oldSanitized = sanitizeQuery(oldQuery);
+        const newSanitized = sanitizeQuery(newQuery);
+        if (oldSanitized && newSanitized && oldSanitized !== newSanitized) {
+          throw new Error(
+            `Failed to make a visual query builder query that is equivalent to the query.\nOriginal query: ${oldQuery}\nQuery builder query: ${newQuery}`
+          );
+        }
+      }
     } catch (err) {
       if (err instanceof Error) {
         console.error('error parsing target:', err.message);
@@ -181,16 +196,19 @@ export default class GraphiteQuery {
     arrayMove(this.functions, index, index + offset);
   }
 
-  updateModelTarget(targets: any) {
+  generateQueryString(): string {
     const wrapFunction = (target: string, func: FuncInstance) => {
       return func.render(target, (value: string) => {
         return this.templateSrv ? this.templateSrv.replace(value, this.scopedVars) : value;
       });
     };
+    const metricPath = this.getSegmentPathUpTo(this.segments.length).replace(/\.?select metric$/, '');
+    return reduce(this.functions, wrapFunction, metricPath);
+  }
 
+  updateModelTarget(targets: any) {
     if (!this.target.textEditor) {
-      const metricPath = this.getSegmentPathUpTo(this.segments.length).replace(/\.?select metric$/, '');
-      this.target.target = reduce(this.functions, wrapFunction, metricPath);
+      this.target.target = this.generateQueryString();
     }
 
     this.updateRenderedTarget(this.target, targets);
@@ -206,7 +224,7 @@ export default class GraphiteQuery {
     this.functions.forEach((func) => (func.added = false));
   }
 
-  updateRenderedTarget(target: { refId: string | number; target: any; targetFull: any }, targets: any) {
+  updateRenderedTarget(target: { refId: string | number; target: string; targetFull: any }, targets: any) {
     // render nested query
     const targetsByRefId = keyBy(targets, 'refId');
 

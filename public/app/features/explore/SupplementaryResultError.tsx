@@ -1,8 +1,9 @@
 import { css } from '@emotion/css';
-import { ReactNode, useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useState } from 'react';
 
-import { DataQueryError, GrafanaTheme2 } from '@grafana/data';
-import { Alert, AlertVariant, Button, useTheme2 } from '@grafana/ui';
+import { type DataQueryError, type GrafanaTheme2 } from '@grafana/data';
+import { Trans } from '@grafana/i18n';
+import { Alert, type AlertVariant, Button, useTheme2 } from '@grafana/ui';
 
 type Props = {
   error?: DataQueryError;
@@ -50,7 +51,7 @@ export function SupplementaryResultError(props: Props) {
                   setIsOpen(true);
                 }}
               >
-                Show details
+                <Trans i18nKey="explore.supplementary-result-error.show-details">Show details</Trans>
               </Button>
             ) : (
               message

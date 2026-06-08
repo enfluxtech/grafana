@@ -5,9 +5,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grafana/authlib/authn"
-	"github.com/grafana/authlib/claims"
 	"golang.org/x/oauth2"
+
+	"github.com/grafana/authlib/authn"
+	claims "github.com/grafana/authlib/types"
 
 	"github.com/grafana/grafana/pkg/apimachinery/identity"
 	"github.com/grafana/grafana/pkg/models/usertoken"
@@ -73,50 +74,82 @@ type Identity struct {
 	ClientParams ClientParams
 	// Permissions is the list of permissions the entity has.
 	Permissions map[int64]map[string][]string
+	// AccessToken is the access token that went into authenticating this identity. This will be empty for legacy auth mechanisms and in-process service identities.
+	AccessToken string
 	// IDToken is a signed token representing the identity that can be forwarded to plugins and external services.
-	IDToken       string
-	IDTokenClaims *authn.Claims[authn.IDTokenClaims]
+	IDToken string
+	// ExternalUID is the unique identifier for the entity in the external system.
+	ExternalUID string
 
+	IDTokenClaims     *authn.Claims[authn.IDTokenClaims]
 	AccessTokenClaims *authn.Claims[authn.AccessTokenClaims]
 }
 
-// Access implements claims.AuthInfo.
-func (i *Identity) GetAccess() claims.AccessClaims {
-	if i.AccessTokenClaims != nil {
-		return authn.NewAccessClaims(*i.AccessTokenClaims)
-	}
-	return &identity.IDClaimsWrapper{Source: i}
+func (i *Identity) GetID() string {
+	return i.GetSubject()
 }
 
-// Identity implements claims.AuthInfo.
-func (i *Identity) GetIdentity() claims.IdentityClaims {
-	if i.IDTokenClaims != nil {
-		return authn.NewIdentityClaims(*i.IDTokenClaims)
-	}
-	return &identity.IDClaimsWrapper{Source: i}
-}
-
-// GetRawIdentifier implements Requester.
-func (i *Identity) GetRawIdentifier() string {
-	return i.UID
-}
-
-// GetInternalID implements Requester.
 func (i *Identity) GetInternalID() (int64, error) {
 	return identity.IntIdentifier(i.GetID())
 }
 
-// GetIdentityType implements Requester.
+func (i *Identity) GetUID() string {
+	return claims.NewTypeID(i.Type, i.UID)
+}
+
+func (i *Identity) GetRawIdentifier() string {
+	return i.UID
+}
+
+func (i *Identity) GetIdentifier() string {
+	return i.UID
+}
+
 func (i *Identity) GetIdentityType() claims.IdentityType {
 	return i.Type
 }
 
-// GetIdentityType implements Requester.
 func (i *Identity) IsIdentityType(expected ...claims.IdentityType) bool {
 	return claims.IsIdentityType(i.GetIdentityType(), expected...)
 }
 
-// GetExtra implements identity.Requester.
+func (i *Identity) GetNamespace() string {
+	return i.Namespace
+}
+
+func (i *Identity) GetSubject() string {
+	return claims.NewTypeID(i.Type, i.ID)
+}
+
+func (i *Identity) GetAudience() []string {
+	if i.AccessTokenClaims != nil {
+		return i.AccessTokenClaims.Audience
+	}
+	return []string{}
+}
+
+func (i *Identity) GetEmailVerified() bool {
+	return i.EmailVerified
+}
+
+func (i *Identity) GetTokenPermissions() []string {
+	if i.AccessTokenClaims != nil {
+		return i.AccessTokenClaims.Rest.Permissions
+	}
+	return []string{}
+}
+
+func (i *Identity) GetTokenDelegatedPermissions() []string {
+	if i.AccessTokenClaims != nil {
+		return i.AccessTokenClaims.Rest.DelegatedPermissions
+	}
+	return []string{}
+}
+
+func (i *Identity) GetGroups() []string {
+	return []string{}
+}
+
 func (i *Identity) GetExtra() map[string][]string {
 	extra := map[string][]string{}
 	if i.IDToken != "" {
@@ -125,25 +158,20 @@ func (i *Identity) GetExtra() map[string][]string {
 	if i.GetOrgRole().IsValid() {
 		extra["user-instance-role"] = []string{string(i.GetOrgRole())}
 	}
+	if i.AccessTokenClaims != nil && i.AccessTokenClaims.Rest.ServiceIdentity != "" {
+		extra[authn.ServiceIdentityKey] = []string{i.AccessTokenClaims.Rest.ServiceIdentity}
+	}
 	return extra
 }
 
-// GetGroups implements identity.Requester.
-func (i *Identity) GetGroups() []string {
-	return []string{} // teams?
-}
-
-// GetName implements identity.Requester.
 func (i *Identity) GetName() string {
-	return i.Name
-}
-
-func (i *Identity) GetID() string {
-	return identity.NewTypedIDString(i.Type, i.ID)
-}
-
-func (i *Identity) GetUID() string {
-	return identity.NewTypedIDString(i.Type, i.UID)
+	if i.Name != "" {
+		return i.Name
+	}
+	if i.Login != "" {
+		return i.Login
+	}
+	return i.Email
 }
 
 func (i *Identity) GetAuthID() string {
@@ -165,32 +193,28 @@ func (i *Identity) GetCacheKey() string {
 	return fmt.Sprintf("%d-%s-%s", i.GetOrgID(), i.Type, id)
 }
 
-func (i *Identity) GetDisplayName() string {
-	return i.Name
-}
-
 func (i *Identity) GetEmail() string {
 	return i.Email
-}
-
-func (i *Identity) IsEmailVerified() bool {
-	return i.EmailVerified
 }
 
 func (i *Identity) GetIDToken() string {
 	return i.IDToken
 }
 
+func (i *Identity) GetAccessToken() string {
+	return i.AccessToken
+}
+
 func (i *Identity) GetIsGrafanaAdmin() bool {
 	return i.IsGrafanaAdmin != nil && *i.IsGrafanaAdmin
 }
 
-func (i *Identity) GetLogin() string {
+func (i *Identity) GetUsername() string {
 	return i.Login
 }
 
-func (i *Identity) GetNamespace() string {
-	return i.Namespace
+func (i *Identity) GetLogin() string {
+	return i.Login
 }
 
 func (i *Identity) GetOrgID() int64 {
@@ -270,24 +294,28 @@ func (i *Identity) IsNil() bool {
 // SignedInUser returns a SignedInUser from the identity.
 func (i *Identity) SignedInUser() *user.SignedInUser {
 	u := &user.SignedInUser{
-		OrgID:           i.OrgID,
-		OrgName:         i.OrgName,
-		OrgRole:         i.GetOrgRole(),
-		Login:           i.Login,
-		Name:            i.Name,
-		Email:           i.Email,
-		AuthID:          i.AuthID,
-		AuthenticatedBy: i.AuthenticatedBy,
-		IsGrafanaAdmin:  i.GetIsGrafanaAdmin(),
-		IsAnonymous:     i.IsIdentityType(claims.TypeAnonymous),
-		IsDisabled:      i.IsDisabled,
-		HelpFlags1:      i.HelpFlags1,
-		LastSeenAt:      i.LastSeenAt,
-		Teams:           i.Teams,
-		Permissions:     i.Permissions,
-		IDToken:         i.IDToken,
-		FallbackType:    i.Type,
-		Namespace:       i.Namespace,
+		OrgID:             i.OrgID,
+		OrgName:           i.OrgName,
+		OrgRole:           i.GetOrgRole(),
+		Login:             i.Login,
+		Name:              i.Name,
+		Email:             i.Email,
+		EmailVerified:     i.EmailVerified,
+		AuthID:            i.AuthID,
+		AuthenticatedBy:   i.AuthenticatedBy,
+		Namespace:         i.Namespace,
+		IsGrafanaAdmin:    i.GetIsGrafanaAdmin(),
+		IsAnonymous:       i.IsIdentityType(claims.TypeAnonymous),
+		IsDisabled:        i.IsDisabled,
+		HelpFlags1:        i.HelpFlags1,
+		LastSeenAt:        i.LastSeenAt,
+		Teams:             i.Teams,
+		Permissions:       i.Permissions,
+		IDToken:           i.IDToken,
+		IDTokenClaims:     i.IDTokenClaims,
+		AccessTokenClaims: i.AccessTokenClaims,
+		AccessToken:       i.AccessToken,
+		FallbackType:      i.Type,
 	}
 
 	if i.IsIdentityType(claims.TypeAPIKey) {

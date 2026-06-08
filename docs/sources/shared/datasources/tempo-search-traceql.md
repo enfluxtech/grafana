@@ -104,13 +104,13 @@ To add a tag, follow these steps:
 
 ### Optional: Use Aggregate by
 
-{{% admonition type="warning" %}}
+{{< admonition type="warning" >}}
 Metrics summary API and the **Aggregate by** feature are deprecated in Grafana Cloud and Grafana 11.3 and later.
 It will be removed in a future release.
-{{% /admonition %}}
+{{< /admonition >}}
 
 Using **Aggregate by**, you can calculate RED metrics (total span count, percent erroring spans, and latency information) for spans of `kind=server` that match your filter criteria, grouped by one or more attributes.
-This capability is based on the [metrics summary API](/docs/grafana-cloud/monitor-infrastructure/traces/metrics-summary-api/).
+This capability is based on the [metrics summary API](/docs/grafana-cloud/send-data/traces/metrics-summary-api/).
 Metrics summary only calculates summaries based on spans received within the last hour.
 For additional information, refer to [Traces to metrics: Ad-hoc RED metrics in Grafana Tempo with `Aggregate by`](https://grafana.com/blog/2023/12/07/traces-to-metrics-ad-hoc-red-metrics-in-grafana-tempo-with-aggregate-by/).
 

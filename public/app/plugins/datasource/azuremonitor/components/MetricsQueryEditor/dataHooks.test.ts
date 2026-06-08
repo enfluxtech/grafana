@@ -1,16 +1,18 @@
 import { renderHook, waitFor } from '@testing-library/react';
 
-import createMockDatasource from '../../__mocks__/datasource';
-import Datasource from '../../datasource';
-import { AzureMetricQuery, AzureMonitorOption, AzureMonitorQuery, AzureQueryType } from '../../types';
+import { type AzureMetricQuery, AzureQueryType } from '../../dataquery.gen';
+import type Datasource from '../../datasource';
+import createMockDatasource from '../../mocks/datasource';
+import { type AzureMonitorQuery } from '../../types/query';
+import { type AzureMonitorOption } from '../../types/types';
 
 import {
   useMetricNames,
   useMetricNamespaces,
   useMetricMetadata,
-  DataHook,
-  MetricMetadata,
-  MetricsMetadataHook,
+  type DataHook,
+  type MetricMetadata,
+  type MetricsMetadataHook,
 } from './dataHooks';
 
 const opt = (text: string, value: string) => ({ text, value });

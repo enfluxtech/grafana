@@ -1,14 +1,16 @@
-import userEvent from '@testing-library/user-event';
+import type { JSX } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
-import { screen, render, within } from 'test/test-utils';
+import { render, screen, within } from 'test/test-utils';
 import { byRole, byTestId } from 'testing-library-selector';
+
+import { config } from '@grafana/runtime';
 
 import { DashboardSearchItemType } from '../../../../search/types';
 import { mockDashboardApi, setupMswServer } from '../../mockApi';
 import { mockDashboardDto, mockDashboardSearchItem } from '../../mocks';
-import { RuleFormValues } from '../../types/rule-form';
+import { getDefaultFormValues } from '../../rule-editor/formDefaults';
+import { type RuleFormValues } from '../../types/rule-form';
 import { Annotation } from '../../utils/constants';
-import { getDefaultFormValues } from '../../utils/rule-form';
 
 import AnnotationsStep from './AnnotationsStep';
 
@@ -47,24 +49,24 @@ function FormWrapper({ formValues }: { formValues?: Partial<RuleFormValues> }) {
 }
 
 describe('AnnotationsField', function () {
+  config.featureToggles.kubernetesDashboards = false;
+
   it('should display default list of annotations', function () {
     render(<FormWrapper />);
 
     const annotationElements = ui.annotationKeys.getAll();
 
     expect(annotationElements).toHaveLength(3);
-    expect(annotationElements[0]).toHaveTextContent('Summary');
-    expect(annotationElements[1]).toHaveTextContent('Description');
-    expect(annotationElements[2]).toHaveTextContent('Runbook URL');
+    expect(screen.getByLabelText(/Summary/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Description/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Runbook URL/)).toBeInTheDocument();
   });
 
   describe('Dashboard and panel picker', function () {
     it('should display dashboard and panel selector when select button clicked', async function () {
       mockDashboardApi(server).search([]);
 
-      const user = userEvent.setup();
-
-      render(<FormWrapper />);
+      const { user } = render(<FormWrapper />);
 
       await user.click(ui.setDashboardButton.get());
 
@@ -88,9 +90,7 @@ describe('AnnotationsField', function () {
         })
       );
 
-      const user = userEvent.setup();
-
-      render(<FormWrapper />);
+      const { user } = render(<FormWrapper />);
 
       await user.click(ui.setDashboardButton.get());
       expect(ui.dashboardPicker.confirmButton.get()).toBeDisabled();
@@ -118,9 +118,7 @@ describe('AnnotationsField', function () {
         })
       );
 
-      const user = userEvent.setup();
-
-      render(<FormWrapper formValues={{ annotations: [] }} />);
+      const { user } = render(<FormWrapper formValues={{ annotations: [] }} />);
 
       await user.click(ui.setDashboardButton.get());
       await user.click(await screen.findByTitle('My dashboard'));
@@ -154,9 +152,7 @@ describe('AnnotationsField', function () {
         })
       );
 
-      const user = userEvent.setup();
-
-      render(<FormWrapper />);
+      const { user } = render(<FormWrapper />);
 
       await user.click(ui.setDashboardButton.get());
       expect(ui.dashboardPicker.confirmButton.get()).toBeDisabled();
@@ -189,9 +185,7 @@ describe('AnnotationsField', function () {
         })
       );
 
-      const user = userEvent.setup();
-
-      render(<FormWrapper />);
+      const { user } = render(<FormWrapper />);
 
       await user.click(ui.setDashboardButton.get());
       expect(ui.dashboardPicker.confirmButton.get()).toBeDisabled();
@@ -233,9 +227,7 @@ describe('AnnotationsField', function () {
         })
       );
 
-      const user = userEvent.setup();
-
-      render(
+      const { user } = render(
         <FormWrapper
           formValues={{
             annotations: [
@@ -290,9 +282,7 @@ describe('AnnotationsField', function () {
       })
     );
 
-    const user = userEvent.setup();
-
-    render(<FormWrapper formValues={{ annotations: [] }} />);
+    const { user } = render(<FormWrapper formValues={{ annotations: [] }} />);
 
     await user.click(ui.setDashboardButton.get());
     await user.click(await screen.findByTitle('My dashboard'));

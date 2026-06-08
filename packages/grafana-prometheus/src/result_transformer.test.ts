@@ -15,7 +15,7 @@ import {
   transformToHistogramOverTime,
   transformV2,
 } from './result_transformer';
-import { PromQuery } from './types';
+import { type PromQuery } from './types';
 
 jest.mock('@grafana/runtime', () => ({
   getTemplateSrv: () => ({
@@ -211,6 +211,119 @@ describe('Prometheus Result Transformer', () => {
       });
     });
 
+    it('legendFormat auto removes common labels', () => {
+      const request = {
+        targets: [
+          {
+            format: 'time_series',
+            refId: 'A',
+            legendFormat: '__auto',
+          },
+        ],
+      } as unknown as DataQueryRequest<PromQuery>;
+      const response = {
+        state: 'Done',
+        data: [
+          {
+            fields: [
+              {
+                name: 'Time',
+                type: 'time',
+                values: [1],
+                typeInfo: { frame: 'time.Time' },
+              },
+              {
+                name: 'up',
+                labels: { __name__: 'up', varying: 'A', common: 'common' },
+                config: {},
+                values: [1],
+              },
+            ],
+            length: 1,
+            refId: 'A',
+            meta: {
+              type: 'timeseries-multi',
+              typeVersion: [0, 1],
+            },
+          },
+          {
+            fields: [
+              {
+                name: 'Time',
+                type: 'time',
+                values: [1],
+                typeInfo: { frame: 'time.Time' },
+              },
+              {
+                name: 'up',
+                labels: { __name__: 'up', varying: 'B', common: 'common' },
+                config: {},
+                values: [1],
+              },
+            ],
+            length: 1,
+            refId: 'A',
+            meta: {
+              type: 'timeseries-multi',
+              typeVersion: [0, 1],
+            },
+          },
+        ],
+      } as unknown as DataQueryResponse;
+      const series = transformV2(response, request, {});
+      expect(series).toEqual({
+        data: [
+          {
+            fields: [
+              {
+                name: 'Time',
+                type: 'time',
+                values: [1],
+                typeInfo: { frame: 'time.Time' },
+              },
+              {
+                config: { displayNameFromDS: '{varying="A"}' },
+                labels: { __name__: 'up', varying: 'A', common: 'common' },
+                name: 'up',
+                values: [1],
+              },
+            ],
+            length: 1,
+            meta: {
+              type: 'timeseries-multi',
+              typeVersion: [0, 1],
+              preferredVisualisationType: 'graph',
+            },
+            refId: 'A',
+          },
+          {
+            fields: [
+              {
+                name: 'Time',
+                type: 'time',
+                values: [1],
+                typeInfo: { frame: 'time.Time' },
+              },
+              {
+                config: { displayNameFromDS: '{varying="B"}' },
+                labels: { __name__: 'up', varying: 'B', common: 'common' },
+                name: 'up',
+                values: [1],
+              },
+            ],
+            length: 1,
+            meta: {
+              type: 'timeseries-multi',
+              typeVersion: [0, 1],
+              preferredVisualisationType: 'graph',
+            },
+            refId: 'A',
+          },
+        ],
+        state: 'Done',
+      });
+    });
+
     it('results with table format should be transformed to table dataFrames', () => {
       const request = {
         targets: [
@@ -261,11 +374,11 @@ describe('Prometheus Result Transformer', () => {
           createDataFrame({
             refId: 'A',
             fields: [
-              { name: 'time', type: FieldType.time, values: [6, 5, 4] },
+              { name: 'time', type: FieldType.time, values: [4, 5, 6] },
               {
                 name: 'value',
                 type: FieldType.number,
-                values: [6, 5, 4],
+                values: [4, 5, 6],
                 labels: { label1: 'value1', label2: 'value2' },
               },
             ],
@@ -288,11 +401,13 @@ describe('Prometheus Result Transformer', () => {
 
       expect(series.data.length).toEqual(1);
       expect(series.data[0].fields[0].name).toEqual('Time');
+      expect(series.data[0].fields[0].values).toEqual([2, 3, 4, 5, 6, 7]);
       expect(series.data[0].fields[1].name).toEqual('label1');
       expect(series.data[0].fields[2].name).toEqual('label2');
       expect(series.data[0].fields[3].name).toEqual('label3');
       expect(series.data[0].fields[4].name).toEqual('label4');
       expect(series.data[0].fields[5].name).toEqual('Value');
+      expect(series.data[0].fields[5].values).toEqual([2, 3, 4, 5, 6, 7]);
       expect(series.data[0].meta?.preferredVisualisationType).toEqual('rawPrometheus' as PreferredVisualisationType);
     });
 

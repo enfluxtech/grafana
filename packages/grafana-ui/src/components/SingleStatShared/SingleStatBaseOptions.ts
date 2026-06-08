@@ -1,22 +1,22 @@
-import { cloneDeep, identity, isNumber, omit, pickBy } from 'lodash';
+import { cloneDeep, omit, pickBy } from 'lodash';
 
 import {
   convertOldAngularValueMappings,
   FieldColorModeId,
-  FieldConfig,
+  type FieldConfig,
   fieldReducers,
-  PanelModel,
-  ReduceDataOptions,
+  type PanelModel,
+  type ReduceDataOptions,
   ReducerID,
   sortThresholds,
-  Threshold,
-  ThresholdsConfig,
+  type Threshold,
+  type ThresholdsConfig,
   ThresholdsMode,
   validateFieldConfig,
-  ValueMapping,
+  type ValueMapping,
   VizOrientation,
 } from '@grafana/data';
-import { LegendDisplayMode, OptionsWithLegend, OptionsWithTextFormatting } from '@grafana/schema';
+import { LegendDisplayMode, type OptionsWithLegend, type OptionsWithTextFormatting } from '@grafana/schema';
 
 export interface SingleStatBaseOptions extends OptionsWithTextFormatting {
   reduceOptions: ReduceDataOptions;
@@ -39,7 +39,7 @@ export function sharedSingleStatPanelChangedHandler(
   };
 
   // Migrating from angular singlestat
-  if (prevPluginId === 'singlestat' && prevOptions.angular) {
+  if ((prevPluginId === 'singlestat' || prevPluginId === 'grafana-singlestat-panel') && prevOptions.angular) {
     return migrateFromAngularSinglestat(panel, prevOptions);
   } else if (prevPluginId === 'graph') {
     // Migrating from Graph panel
@@ -101,7 +101,7 @@ function migrateFromGraphPanel(panel: PanelModel<Partial<SingleStatBaseOptions>>
       }
 
       if (legendConfig.values) {
-        const enabledLegendValues = pickBy(legendConfig, identity);
+        const enabledLegendValues = pickBy(legendConfig, (v) => v);
         options.legend.calcs = getReducersFromLegend(enabledLegendValues);
       }
 
@@ -117,12 +117,12 @@ function migrateFromGraphPanel(panel: PanelModel<Partial<SingleStatBaseOptions>>
 function migrateFromAngularSinglestat(panel: PanelModel<Partial<SingleStatBaseOptions>> | any, prevOptions: any) {
   const prevPanel = prevOptions.angular;
   const reducer = fieldReducers.getIfExists(prevPanel.valueName);
-  const options = {
+  const options: SingleStatBaseOptions = {
     reduceOptions: {
       calcs: [reducer ? reducer.id : ReducerID.mean],
     },
     orientation: VizOrientation.Horizontal,
-  } as any;
+  };
 
   const defaults: FieldConfig = {};
 
@@ -188,11 +188,16 @@ function migrateFromAngularSinglestat(panel: PanelModel<Partial<SingleStatBaseOp
 export function sharedSingleStatMigrationHandler(panel: PanelModel<SingleStatBaseOptions>): SingleStatBaseOptions {
   if (!panel.options) {
     // This happens on the first load or when migrating from angular
-    return {} as any;
+    return {
+      reduceOptions: {
+        calcs: [ReducerID.mean],
+      },
+      orientation: VizOrientation.Horizontal,
+    };
   }
 
   const previousVersion = parseFloat(panel.pluginVersion || '6.1');
-  let options = panel.options as any;
+  let options: any = panel.options;
 
   if (previousVersion < 6.2) {
     options = migrateFromValueOptions(options);
@@ -283,17 +288,17 @@ export function sharedSingleStatMigrationHandler(panel: PanelModel<SingleStatBas
     const config = panel.fieldConfig?.defaults;
     let unit = config?.unit;
     if (unit === 'percent') {
-      if (!isNumber(config.min)) {
+      if (typeof config.min !== 'number') {
         config.min = 0;
       }
-      if (!isNumber(config.max)) {
+      if (typeof config.max !== 'number') {
         config.max = 100;
       }
     } else if (unit === 'percentunit') {
-      if (!isNumber(config.min)) {
+      if (typeof config.min !== 'number') {
         config.min = 0;
       }
-      if (!isNumber(config.max)) {
+      if (typeof config.max !== 'number') {
         config.max = 1;
       }
     }
