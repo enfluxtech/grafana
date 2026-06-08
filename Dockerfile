@@ -34,7 +34,7 @@ RUN apk add --no-cache make build-base python3
 RUN yarn install
 
 # tsx is needed for webpack-cli to load TypeScript config files (Grafana 13+)
-RUN yarn global add tsx
+RUN npm install -g tsx
 
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
