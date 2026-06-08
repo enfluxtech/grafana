@@ -42,7 +42,7 @@ ENV NODE_ENV=production
 # Run only the main webpack build — skip yarn build:react19 which creates a
 # parallel module registry that conflicts with the regular chunks at runtime.
 RUN NODE_OPTIONS="--max_old_space_size=8000 --experimental-strip-types" \
-    node_modules/.bin/nx exec --verbose -- webpack --config scripts/webpack/webpack.prod.js
+    yarn nx exec --verbose -- webpack --config scripts/webpack/webpack.prod.js
 
 # ── Final image ───────────────────────────────────────────────────────────────
 FROM grafana/grafana:${GRAFANA_VERSION}
