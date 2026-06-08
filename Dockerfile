@@ -48,6 +48,13 @@ FROM grafana/grafana:${GRAFANA_VERSION}
 
 LABEL maintainer="it@enflux.io"
 
-# Replace upstream frontend with our custom-branded build
+# Clear the official frontend build to prevent chunk mixing between
+# our compiled JS and the official image's pre-built chunks.
+USER root
+RUN rm -rf /usr/share/grafana/public/build
+
+# Replace with our fully custom-branded build
 COPY --from=js-builder /tmp/grafana/public/build /usr/share/grafana/public/build
 COPY --from=js-builder /tmp/grafana/public/img/grafana_icon.svg /usr/share/grafana/public/img/grafana_icon.svg
+
+USER grafana
