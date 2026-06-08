@@ -38,9 +38,10 @@ RUN yarn install
 # alters webpack's module concatenation order causing runtime undefined exports.
 RUN npm install -g tsx
 
-# Patch import.meta.dirname in the plugin webpack config (not available via tsx loader).
-# fileURLToPath(new URL('.', import.meta.url)) is the ESM-compatible equivalent.
+# Patch import.meta.dirname/filename in the plugin webpack config (undefined via tsx loader).
 RUN sed -i "s|import\.meta\.dirname|fileURLToPath(new URL('.', import.meta.url))|g" \
+        packages/grafana-plugin-configs/webpack.config.ts && \
+    sed -i "s|import\.meta\.filename|fileURLToPath(import.meta.url)|g" \
         packages/grafana-plugin-configs/webpack.config.ts && \
     sed -i '1s|^|import { fileURLToPath } from "url";\n|' \
         packages/grafana-plugin-configs/webpack.config.ts
