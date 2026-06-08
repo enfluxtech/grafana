@@ -33,16 +33,14 @@ RUN apk add --no-cache make build-base python3
 # Use plain yarn install (security-01 lockfile is out of sync with package.json)
 RUN yarn install
 
-# tsx is needed for webpack-cli to load ESM TypeScript config files (Grafana 13+)
-RUN npm install -g tsx
-
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
 COPY emails emails
 
 ENV NODE_ENV=production
-# Import tsx only for the build step so webpack-cli can load .ts webpack configs
-RUN NODE_OPTIONS="--max_old_space_size=8000 --import tsx" yarn build
+# --experimental-strip-types (Node 22.6+) lets Node load .ts files natively,
+# preserving import.meta.dirname in ESM context without any CJS transformation.
+RUN NODE_OPTIONS="--max_old_space_size=8000 --experimental-strip-types" yarn build
 
 # ── Final image ───────────────────────────────────────────────────────────────
 FROM grafana/grafana:${GRAFANA_VERSION}
