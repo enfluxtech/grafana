@@ -34,15 +34,23 @@ RUN apk add --no-cache make build-base python3
 # causing false failures. The committed yarn.lock still pins all package versions.
 RUN yarn install
 
+# Install tsx for TypeScript loading — avoids --experimental-strip-types which
+# alters webpack's module concatenation order causing runtime undefined exports.
+RUN npm install -g tsx
+
+# Patch import.meta.dirname in the plugin webpack config (not available via tsx loader).
+# fileURLToPath(new URL('.', import.meta.url)) is the ESM-compatible equivalent.
+RUN sed -i "s|import\.meta\.dirname|fileURLToPath(new URL('.', import.meta.url))|g" \
+        packages/grafana-plugin-configs/webpack.config.ts && \
+    sed -i '1s|^|import { fileURLToPath } from "url";\n|' \
+        packages/grafana-plugin-configs/webpack.config.ts
+
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
 COPY emails emails
 
 ENV NODE_ENV=production
-# Run only the main webpack build — skip yarn build:react19 which creates a
-# parallel module registry that conflicts with the regular chunks at runtime.
-RUN NODE_OPTIONS="--max_old_space_size=8000 --experimental-strip-types" \
-    yarn nx exec --verbose -- webpack --config scripts/webpack/webpack.prod.js
+RUN NODE_OPTIONS="--max_old_space_size=8000 --import tsx" yarn build
 
 # ── Final image ───────────────────────────────────────────────────────────────
 FROM grafana/grafana:${GRAFANA_VERSION}
