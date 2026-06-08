@@ -53,6 +53,9 @@ COPY emails emails
 ENV NODE_ENV=production
 # Clear webpack filesystem cache to prevent stale chunks from cached yarn install layer
 RUN rm -rf node_modules/.cache
+# Strip the react19 build step — it overwrites the main build's runtime chunk with one
+# that references a different set of chunk hashes, causing the wrong modules to load.
+RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.scripts['build']=p.scripts['build'].replace(' && yarn build:react19','');fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
 RUN NODE_OPTIONS="--max_old_space_size=8000 --import tsx" yarn build
 
 # ── Final image ───────────────────────────────────────────────────────────────
