@@ -8,7 +8,7 @@ import { Tooltip, useStyles2, useTheme2 } from '@grafana/ui';
 import g8LoginDarkSvg from 'img/g8_login_dark.svg';
 import g8LoginLightSvg from 'img/g8_login_light.svg';
 
-const enfluxIconSvg = 'public/img/enflux_icon.svg';
+const enfluxLogo = 'public/img/enflux_cropped.png';
 
 export interface BrandComponentProps {
   className?: string;
@@ -16,7 +16,7 @@ export interface BrandComponentProps {
 }
 
 export const LoginLogo: FC<BrandComponentProps & { logo?: string }> = ({ className, logo }) => {
-  return <img className={className} src={`${logo ? logo : enfluxIconSvg}`} alt="Enflux" />;
+  return <img className={className} src={`${logo ? logo : enfluxLogo}`} alt="Enflux" />;
 };
 
 const LoginBackground: FC<BrandComponentProps> = ({ className, children }) => {
@@ -52,7 +52,7 @@ const LoginBackground: FC<BrandComponentProps> = ({ className, children }) => {
 };
 
 const MenuLogo: FC<BrandComponentProps> = ({ className }) => {
-  return <img className={className} src={enfluxIconSvg} alt="Enflux" />;
+  return <img className={className} src={enfluxLogo} alt="Enflux" />;
 };
 
 export function HomeLink({ homeNav, inMegaMenuOverlay }: { homeNav?: NavModelItem; inMegaMenuOverlay?: boolean }) {
@@ -118,6 +118,7 @@ export class Branding {
   static AppTitle = 'Enflux Portal';
   static LoginTitle = 'Enflux Portal';
   static HideEdition = true;
+  static hideFooter = true;
   static GetLoginSubTitle = (): null | string => {
     return null;
   };

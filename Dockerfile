@@ -69,7 +69,10 @@ RUN rm -rf /usr/share/grafana/public/build
 
 # Replace with our fully custom-branded build
 COPY --from=js-builder /tmp/grafana/public/build /usr/share/grafana/public/build
-# Add Enflux logo as a static asset (referenced directly in Branding.tsx, not webpack-compiled)
+# Enflux logo assets — served as static files, not webpack-compiled
+COPY enflux/enflux_cropped.png /usr/share/grafana/public/img/enflux_cropped.png
 COPY enflux/enflux_icon.svg /usr/share/grafana/public/img/enflux_icon.svg
+# Replace the Grafana loading spinner with the Enflux logo
+COPY enflux/enflux_icon.svg /usr/share/grafana/public/img/grafana_icon.svg
 
 USER grafana
