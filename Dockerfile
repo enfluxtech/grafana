@@ -26,6 +26,9 @@ COPY conf/defaults.ini ./conf/defaults.ini
 
 # Inject Enflux branding before the build
 COPY enflux/Branding.tsx public/app/core/components/Branding/Branding.tsx
+# Patch loading spinner to use Enflux PNG (hardcode path, bypassing Go template variable)
+COPY enflux/enflux_cropped.png public/img/enflux_cropped.png
+RUN sed -i "s|url('\\[\\[.LoadingLogo\\]\\]')|url('public/img/enflux_cropped.png')|g" public/views/index.html
 
 RUN apk add --no-cache make build-base python3
 
@@ -69,10 +72,11 @@ RUN rm -rf /usr/share/grafana/public/build
 
 # Replace with our fully custom-branded build
 COPY --from=js-builder /tmp/grafana/public/build /usr/share/grafana/public/build
-# Enflux logo assets — served as static files, not webpack-compiled
+# Replace loading template (patched to use Enflux PNG spinner)
+COPY --from=js-builder /tmp/grafana/public/views/index.html /usr/share/grafana/public/views/index.html
+# Enflux logo assets — served as static files
 COPY enflux/enflux_cropped.png /usr/share/grafana/public/img/enflux_cropped.png
 COPY enflux/enflux_icon.svg /usr/share/grafana/public/img/enflux_icon.svg
-# Replace the Grafana loading spinner with the Enflux logo
 COPY enflux/enflux_icon.svg /usr/share/grafana/public/img/grafana_icon.svg
 
 USER grafana
