@@ -12,7 +12,7 @@ ARG JS_PLATFORM=linux/amd64
 # ── Frontend build ────────────────────────────────────────────────────────────
 FROM --platform=${JS_PLATFORM} ${JS_IMAGE} AS js-builder
 
-ENV NODE_OPTIONS=--max_old_space_size=8000
+ENV NODE_OPTIONS="--max_old_space_size=8000 --import tsx"
 
 WORKDIR /tmp/grafana
 
