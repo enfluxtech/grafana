@@ -6,7 +6,7 @@
 # avoiding the import-cycle bug in the security-01 source tree.
 
 ARG GRAFANA_VERSION=13.0.1
-ARG JS_IMAGE=node:20-alpine
+ARG JS_IMAGE=node:22-alpine
 ARG JS_PLATFORM=linux/amd64
 
 # ── Frontend build ────────────────────────────────────────────────────────────
