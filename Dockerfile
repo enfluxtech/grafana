@@ -30,7 +30,9 @@ COPY enflux/grafana_icon.svg public/img/grafana_icon.svg
 
 RUN apk add --no-cache make build-base python3
 
-RUN yarn install --immutable
+# --immutable omitted: yarn Berry updates peer-dep state entries across environments,
+# causing false failures. The committed yarn.lock still pins all package versions.
+RUN yarn install
 
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
