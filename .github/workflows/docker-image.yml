@@ -18,7 +18,7 @@ jobs:
         run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USER" --password-stdin
 
       - name: Build image
-        run: docker build -t enflux/grafana:latest -t enflux/grafana:13.0.1 -f Dockerfile .
+        run: docker build --build-arg JS_YARN_INSTALL_FLAG="" -t enflux/grafana:latest -t enflux/grafana:13.0.1 -f Dockerfile .
 
       - name: Push images
         run: |
