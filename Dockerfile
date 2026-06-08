@@ -33,6 +33,9 @@ RUN apk add --no-cache make build-base python3
 # Use plain yarn install (security-01 lockfile is out of sync with package.json)
 RUN yarn install
 
+# tsx is needed for webpack-cli to load TypeScript config files (Grafana 13+)
+RUN yarn global add tsx
+
 COPY tsconfig.json .eslintrc .editorconfig .browserslistrc .prettierrc.js ./
 COPY scripts scripts
 COPY emails emails
