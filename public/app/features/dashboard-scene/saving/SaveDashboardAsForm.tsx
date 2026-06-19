@@ -196,8 +196,10 @@ export function SaveDashboardAsForm({ dashboard, changeInfo }: Props) {
               const meta = await getProvisionedMeta(uid);
               dashboard.setState({
                 meta: {
+                  ...dashboard.state.meta,
                   ...meta,
                   folderUid: uid,
+                  folderTitle: title,
                 },
               });
               // Re-validate title when folder changes to check for duplicates in new folder

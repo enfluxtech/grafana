@@ -287,6 +287,35 @@ describe('SaveDashboardDrawer', () => {
       const dataSent = saveDashboardMutationMock.mock.calls[0][0];
       expect(dataSent.dashboard.uid).toEqual('');
     });
+
+    it('Should preserve canSave and other meta properties when folder changes', async () => {
+      const { dashboard, openAndRender } = setup({
+        meta: {
+          canSave: true,
+          canEdit: true,
+          canStar: true,
+          folderUid: 'original-folder',
+          folderTitle: 'Original Folder',
+        },
+      });
+
+      openAndRender(true);
+
+      // Simulate folder picker selecting a new folder
+      dashboard.setState({
+        meta: {
+          ...dashboard.state.meta,
+          folderUid: 'new-folder',
+          folderTitle: 'New Folder',
+        },
+      });
+
+      // canSave must still be true — not wiped by the folder change
+      expect(dashboard.state.meta.canSave).toBe(true);
+      expect(dashboard.state.meta.canEdit).toBe(true);
+      expect(dashboard.state.meta.folderUid).toBe('new-folder');
+      expect(dashboard.state.meta.folderTitle).toBe('New Folder');
+    });
   });
 });
 
